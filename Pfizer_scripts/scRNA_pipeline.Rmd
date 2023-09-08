@@ -1,0 +1,391 @@
+---
+title: "Pfizer_single_cell"
+output: html_document
+date: "2023-09-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+
+#removes all data from global environment
+rm(list = ls())
+```
+
+## Import Libraries 
+```{r librarys}
+library(Seurat)
+library(ggplot2)
+```
+
+
+## Setup Working Directories
+```{r wd}
+input_dir <- "I:/GMLSC1-Q2051/Pfizer/scRNAseq/SN2_Pfizer_per_sample_outs/"
+output_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/scRNA/"
+```
+
+
+## Setup Data and Processing Pipeline
+```{r sample_processing}
+
+sc_pipeline <- function(ID, inputdir, outputdir) {
+  
+  outdir <- paste0(outputdir,ID,"/")
+  dir_create(outdir)
+  
+  sc_data.data <- Read10X(data.dir = paste0(inputdir,ID,"/count/sample_filtered_feature_bc_matrix"))
+  # Initialize the Seurat object with the raw (non-normalized data).
+  sc_data <- CreateSeuratObject(counts = sc_data.data)
+  
+  # store mitochondrial percentage in object meta data
+  sc_data <- PercentageFeatureSet(sc_data, pattern = "^MT-", col.name = "percent.mt")
+  
+  # QC
+  VlnPlot(sc_data, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+  ggsave(paste0(outdir,ID,"_QC_Vln.png"), height=8, width=16)
+  
+  # run sctransform
+  sc_data <- SCTransform(sc_data, vars.to.regress = "percent.mt", verbose = FALSE)
+  
+  # These are now standard steps in the Seurat workflow for visualization and clustering
+  sc_data <- RunPCA(sc_data, verbose = FALSE)
+  sc_data <- RunUMAP(sc_data, dims = 1:30, verbose = FALSE)
+  
+  sc_data <- FindNeighbors(sc_data, dims = 1:30, verbose = FALSE)
+  sc_data <- FindClusters(sc_data, verbose = FALSE)
+  
+  #Saves processed single-cell dataset 
+  saveRDS(sc_data, file = paste0(outdir, ID, "_scRNA_seurat.RDS"))
+  
+  return(sc_data)
+}
+
+``` 
+
+
+## Run samples
+```{r run_samples}
+
+input_sample_list <- c("AVD_61FEX_1302A","AVD_61FEX_1346A","AVD_61FEX_1956A","AVD_61FEX_2116A","AVD_61FEX_3561A","AVD_61FEX_3633A","AVD_61FEX_4851A","AVD_61FEX_5626A","AVD_61FEX_6481A","AVD_61FEX_6841A","AVD_61FEX_9982A")
+sample_list <-c("1302A","1346A","1956A","2116A","3561A","3633A","4851A","5626A","6481A","6841A","9982A")
+
+data_list <- list()
+
+for (sample in input_sample_list){
+  data <- sc_pipeline(sample, inputdir = input_dir, outputdir = output_dir)
+  data_list <- c(data_list,data)
+}
+
+```
+
+
+## Import scReference data
+```{r import_ref_data}
+
+#Create Reference directory
+outdir_ref <- paste0(output_dir,"Reference_Data/")
+dir_create(outdir_ref)
+
+
+###load References dataset
+reference  <- LoadH5Seurat("I:/GMLSC1-Q2051/Pfizer/Analysis_Results/Jacky/BC_atlas_xe.h5seurat")
+
+# Subset to ER+ (LumA&LumB)
+reference_processed <- subset(reference, subset = subtype == "ER+")
+
+# Run label transfer
+reference_processed <- reference_processed[,unname(which(colSums(GetAssayData(reference_processed))!=0))]
+reference_processed <- SCTransform(reference_processed)
+
+
+Ref_data <- reference_processed
+
+Idents(Ref_data) <- "celltype_major"
+Ref_data_subset <- subset(Ref_data, idents = "Normal Epithelial", invert = TRUE)
+
+saveRDS(Ref_data_subset, file = paste0(outdir_ref, "Reference_scRNA_seurat.RDS"))
+
+```
+
+
+## Run Label Transfer
+```{r label_transfer}
+run_label_transfer <- function(Ref_data, Query_data, ID, output_dir) {
+ 
+  outdir <- paste0(output_dir,ID,"/")
+  
+  anchors <- FindTransferAnchors(reference = Ref_data, 
+                                 query = Query_data, 
+                                 normalization.method = "SCT")
+  sc_obj.predictions.assay <- TransferData(anchorset = anchors, 
+                                              refdata = Ref_data$celltype_major,  
+                                              weight.reduction = Query_data[["pca"]], 
+                                              dims = 1:40) 
+  sc_obj.predictions.assay1 <- TransferData(anchorset = anchors, 
+                                           refdata = Ref_data$celltype_minor,  
+                                           weight.reduction = Query_data[["pca"]], 
+                                           dims = 1:40) 
+  rownames(sc_obj.predictions.assay) <- colnames(Query_data)
+  rownames(sc_obj.predictions.assay1) <- colnames(Query_data)
+  
+  labels <- cbind(sc_obj.predictions.assay,sc_obj.predictions.assay1)
+  write.csv(labels, file=paste0(outdir, ID,"_label_transfer.csv"))
+  
+  Query_data$celltype_major <- sc_obj.predictions.assay$predicted.id
+  Query_data$celltype_minor <- sc_obj.predictions.assay1$predicted.id
+    
+  return(Query_data)
+}
+
+```
+
+
+
+```{r add_labels}
+
+lbtr_list <- list()
+
+idx <- 1
+
+while (idx <= length(input_sample_list)){
+  data <- run_label_transfer(Ref_data_subset, data_list[[idx]], input_sample_list[idx],output_dir = output_dir)
+  lbtr_list <- c(lbtr_list, data)
+  idx <- idx+1
+}
+
+
+idx <- 1
+while(idx <= length(sample_list)){
+  saveRDS(lbtr_list[[idx]], file = paste0(output_dir, input_sample_list[idx],"/", input_sample_list[idx],"_scRNA_label_transfer.RDS"))
+  idx <- idx + 1
+}
+
+
+```
+
+
+## Plot label transfer umaps and cell type proportions
+```{r plot_umaps}
+
+color_dict <- list(
+  "Cancer Epithelial"="#b3b1a6",
+  "Plasmablasts"= "#24d7ff",     
+  "B-cells" = "#33A02C",      
+  "T-cells" =  "#E31A1C",     
+  "CAFs" = "#FB9A99",          
+  "Myeloid" =  "#1F78B4" ,        
+  "Endothelial"= "#E8d9fc",
+  "PVL"= "#FF7F00"                  
+  )
+
+
+
+plot_umap <- function(data_og, data, sample, output_dir, adding_graph = FALSE){
+  
+  plot1 <- DimPlot(data_og)
+  plot2 <- DimPlot(data, group.by = "celltype_major", cols = color_dict)
+  
+  cell_type_counts <- data@meta.data %>%
+    group_by(seurat_clusters, celltype_major) %>%
+    summarise(count = n())
+  
+ cell_type_counts <- cell_type_counts %>%
+  mutate(color = unlist(color_dict[celltype_major]))
+ 
+ unique_labels <- unique(cell_type_counts$celltype_major)
+  
+ # Create a named vector of corresponding colors
+ legend_colors <- unlist(color_dict[unique_labels])
+
+ plot3 <- ggplot(cell_type_counts, aes(y = count, x = seurat_clusters, fill = celltype_major, color = celltype_major)) +
+    geom_bar(position = "fill", stat = "identity", width = 0.8) +
+    scale_fill_manual(values = unlist(color_dict)) +
+    scale_color_manual(values = unlist(color_dict)) +
+    coord_flip() + theme_classic() + labs(x = "Cluster", y = "Proportion")
+  
+ 
+ cell_types <- data@meta.data %>%
+    group_by(celltype_major) %>%
+    summarise(count = n()) %>%
+    mutate(Proportion = count / sum(count))
+ 
+ cell_types$samples <- sample
+ 
+ plot4 <- ggplot(cell_types, aes(y = count, x = samples, fill = celltype_major  , color = celltype_major)) +
+    geom_bar(position = "fill", stat = "identity", width = 0.8) +
+    scale_fill_manual(values = unlist(color_dict)) +
+    scale_color_manual(values = unlist(color_dict)) + theme_classic() + labs(x = "Cluster", y = "Proportion")
+  
+  
+  plot <- (plot1 + plot2)/(plot3 + plot4)
+  ggsave(paste0(output_dir, sample, "/", sample,"_umap_plots.pdf"),plot, height = 15, width = 20)
+ 
+  if (adding_graph == TRUE){
+    return(plot)
+  }
+  
+}
+
+plot_list <- list()
+
+idx <- 1
+while (idx <= length(input_sample_list)){
+  plot <- plot_umap(data_list[[idx]], lbtr_list[[idx]], input_sample_list[idx],output_dir = output_dir, adding_graph = TRUE)
+  plot_list[[idx]] <- plot
+  idx <- idx+1
+}
+
+
+```
+
+## Plot label transfer umaps and cell type proportions for reference dataset
+```{r ref_dataset_plot}
+
+####plot reference
+
+plot1 <- DimPlot(Ref_data_subset, group.by = "celltype_major", cols = color_dict)
+
+cell_types <- Ref_data_subset@meta.data %>%
+    group_by(celltype_major) %>%
+    summarise(count = n()) %>%
+    mutate(Proportion = count / sum(count))
+
+cell_types$samples <- "Reference"
+ 
+plot2 <- ggplot(cell_types, aes(y = count, x = samples, fill = celltype_major  , color = celltype_major)) +
+    geom_bar(position = "fill", stat = "identity", width = 0.8) +
+    scale_fill_manual(values = unlist(color_dict)) +
+    scale_color_manual(values = unlist(color_dict)) + theme_classic() + labs(x = "Cluster", y = "Proportion")
+  
+ggsave(paste0(outdir_ref,"Reference_umap_plots.pdf"), plot1/plot2, height = 15) 
+
+```
+
+## Plot Marker Genes for cell types 
+```{r check_markers}
+
+marker_features <- c("CD3E","CD4","CD3D", #T cells
+                     "CD79A","CD79B", "CD22", #B cells
+                     "MZB1","ITM2C", #Plasmoblasts
+                     "LYZ","CD68","TREM2", #Monocytes/Meyloid
+                     "MYH11","CD36", #PVLs
+                     "CCND1","ESR1","GATA3", "ERBB2", # Tumour
+                     "PECAM1","VWF", #Endothealial
+                     "COL1A1", "COL3A1" #CAFs
+                     )
+
+
+plot_marker_genes <- function(data, sample, output_dir, adding_graph = FALSE){
+
+  plot1 <- FeaturePlot(data, features = marker_features)
+  plot2 <- DimPlot(data, group.by = "celltype_major", cols = color_dict)
+  plot3 <- DotPlot(data, features = marker_features, group.by = "celltype_major",idents = Idents(data))+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  ggsave(paste0(output_dir, sample,"/", sample, "_marker_umaps.pdf"), plot1+plot2, height = 15, width = 20)
+  ggsave(paste0(output_dir, sample,"/",sample,"_marker_plots.pdf"), plot3)
+  
+  if (adding_graph == TRUE){
+    return(list((plot1+plot2),plot3))
+  }
+  
+}
+
+
+marker_plots <- list()
+dot_plots <- list()
+
+idx <- 1
+while (idx <= length(input_sample_list)){
+  plots <- plot_marker_genes(lbtr_list[[idx]], input_sample_list[idx],output_dir = output_dir, adding_graph = TRUE)
+  marker_plots[[idx]] <- plots[[1]]
+  dot_plots[[idx]]<- plots[[2]]
+  idx <- idx+1
+}
+
+
+#Run plots for reference dataset
+plot_marker_genes(Ref_data_subset, "Reference_Data", output_dir)
+```
+
+
+## Add Sample Metadata
+```{r add_metadata}
+metadata <- read.csv("I:/GMLSC1-Q2051/Pfizer/Annotation_from_Pfizer/Pfizer_sample_metadata.csv")
+
+idx <- 1
+while (idx <= length(input_sample_list)){
+  
+  #converts to same format as metadata
+  new_sample_id  <- gsub("_", "-", input_sample_list[idx])
+  
+  #gets row in metadata
+  meta_idx <- which(metadata$Subject.ID == new_sample_id)
+  
+  #Add metadata
+  lbtr_list[[idx]]@meta.data$sample <- input_sample_list[idx]
+  lbtr_list[[idx]]@meta.data$Tissue.Type <- metadata$Tissue.Type[meta_idx]
+  lbtr_list[[idx]]@meta.data$Lum.Class <- metadata$Lum.Class[meta_idx]
+  lbtr_list[[idx]]@meta.data$Tissue.Region <- metadata$Tissue.Region[meta_idx]
+  lbtr_list[[idx]]@meta.data$Visium.Code <- metadata$Visium.Code[meta_idx]
+
+  idx <- idx+1
+}
+
+#Saves list of scRNA objects for visium lable transfer
+saveRDS(lbtr_list, file = paste0(output_dir, "scRNA_list.RDS"))
+
+
+```
+
+
+## Merge scRNA datasets
+```{r merge_data}
+
+scRNA.combined <- Merge_Seurat_List(lbtr_list, add.cell.ids = input_sample_list)
+
+
+#Plot merged Data
+DefaultAssay(scRNA.combined) <- "RNA"
+scRNA.combined <- FindVariableFeatures(scRNA.combined, selection.method = "vst")
+scRNA.combined <- ScaleData(scRNA.combined)
+scRNA.combined <- RunPCA(scRNA.combined, verbose = TRUE, npcs=40)
+scRNA.combined <- FindNeighbors(scRNA.combined, reduction = "pca", dims = 1:40)
+#scRNA.combined <- FindClusters(scRNA.combined, verbose = TRUE, resolution = 0.5)
+scRNA.combined <- RunUMAP(scRNA.combined, reduction = "pca", dims = 1:40)
+
+
+plot1 <- DimPlot(scRNA.combined, group.by = "sample")
+plot2 <- DimPlot(scRNA.combined, group.by = "Tissue.Type")
+plot3 <- DimPlot(scRNA.combined, group.by = "Lum.Class")
+plot4 <- DimPlot(scRNA.combined, group.by = "celltype_major")
+plot5 <- DimPlot(scRNA.combined, group.by = "celltype_minor")
+
+plots <- (plot1+plot2+plot3)/(plot4+plot5)
+ggsave(paste0(output_dir, "combined_samples_umaps.pdf"),plots, height = 12, width = 20)
+
+###Plots just cancer epithelial subtypes
+Idents(scRNA.combined) <- "celltype_major"
+cancer_subset <- subset(scRNA.combined, idents = "Cancer Epithelial")
+plot6 <-  DimPlot(cancer_subset, group.by = "celltype_minor")
+
+```
+
+
+## Annotation of Plasmablasts vs B-cells
+```{r plasmoblasts_annotation}
+Plasma_vs_bcell_features <- c("NUCB2","FNDC3B","XBP1","FKBP11","ANKRD28","CD38","IGKC","MZB1","IGHG3","TNFRSF17","IGHG1","IGLV3-1","IGHG4","IGLL5","PIM2","ITM2C",
+"SDC1","CAV1","SKAMF7","GAS6","PRDM1","HSPA1B","AQP3","ERN1","TRIB1","DUSP5","CD63","NEAT1")
+
+
+idx <- 1
+while (idx <= length(input_sample_list)){
+  plot <- DotPlot(lbtr_list[[idx]], features = Plasma_vs_bcell_features, group.by = "celltype_major")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  #ggsave(paste0(OUT_DIR,input_sample_list[idx],"_celltypes_subset.pdf"), plot)
+  print(plot)
+  idx <- idx + 1
+}
+```
+

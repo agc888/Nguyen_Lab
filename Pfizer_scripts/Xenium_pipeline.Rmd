@@ -1,0 +1,249 @@
+---
+title: "Pfizer_Xeinium"
+output: html_document
+date: "2023-09-05"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+
+#removes all data from global environment
+rm(list = ls())
+```
+
+
+```{r load_libraries}
+library(Seurat)
+library(ggplot2)
+library(sctransform)
+library(xfun)
+library(harmony)
+library(dplyr)
+library(purrr)
+library(SeuratDisk)
+library(scCustomize)
+library(EnhancedVolcano)
+library(UCell)
+library(irGSEA)
+library(tidyverse)
+library(RColorBrewer)
+library(edgeR)
+library(SingleCellExperiment)
+library(scuttle)
+library(statmod)
+```
+
+## Setup Working Directories
+```{r wd}
+input_dir <- "I:/GMLSC1-Q2051/Pfizer/xenium_release_jw_pfizer_hbreast_Jun05/"
+input_dir_sc <- "I:/GML001-Q1851/Andrew_C/Pfizer/scRNA/"
+output_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Xenium/"
+```
+
+
+## Import Xenium data
+```{r read_Xenium_data}
+
+
+input_Xenium <- function(sample, input_dir, output_dir){
+  
+  outdir <- paste0(output_dir,sample,"/")
+  dir_create(outdir)
+  
+  Xenium_raw <- ReadXenium(paste0(input_dir, sample, "/"))
+  
+  x <- CreateSeuratObject(counts = Xenium_raw$matrix$`Gene Expression`, assay = "Xenium")
+  cents <- CreateCentroids(Xenium_raw$centroids)
+  segmentations.data <- list(
+    "centroids" = cents,
+    "segmentation" = NULL
+  )
+  coords <- CreateFOV(
+    coords = segmentations.data,
+    type = c("segmentation", "centroids"),
+    molecules = NULL,
+    assay = "Xenium"
+  )
+ 
+  x[["fov"]] <- coords
+  
+  saveRDS(x, file = paste0(outdir, sample,"_Xenium_seurat.RDS"))
+  
+  return(x)
+}
+
+Xenium_samples_input <- c("1302A_0007311","1956A_0007330", "4851A_0007473")
+
+
+#Inport each sample
+Xen_data <- list()
+
+for (sample in Xenium_samples_input){
+  data <- input_Xenium(sample, input_dir = input_dir, output_dir = output_dir)
+  Xen_data <- c(Xen_data, data)
+}
+
+#saveRDS(Xen_data, file = paste0(output_dir,"all_Xenium.RDS"))
+```
+
+## Import Reference dataset and scRNA datasets
+```{r import_reference_datasets}
+
+Reference_scRNA_Data <- readRDS(paste0(input_dir_sc,"Reference_Data/Reference_scRNA_seurat.RDS"))
+scRNA_data <- readRDS(file = paste0(input_dir_sc, "scRNA_list.RDS"))
+
+##Get only Xenium scRNA data (AVD_61FEX_1302A, AVD_61FEX_1956A and AVD_61FEX_4851A) -> these are index 1,3 and 7 respectively
+Xenium_scRNA <- scRNA_data[[c(1,3,7)]]
+    
+```
+
+
+## Run Xenium Normalisation 
+```{r run_normalisation}
+
+run_preprocessing <- function(data, sample, outdir){
+  
+  #Removes all non 0 data
+  data <- data[,unname(which(colSums(GetAssayData(data))!=0))]
+  Query_data <- SCTransform(data, assay = "Xenium", verbose = FALSE)
+  Query_data <- RunPCA(Query_data, assay = "SCT", verbose = TRUE, npcs=40)
+  Query_data <- FindNeighbors(Query_data, reduction = "pca", dims = 1:40)
+  #Query_data <- FindClusters(Query_data, verbose = TRUE, resolution = 0.5)
+  #k nbQuery_data <- RunUMAP(Query_data, reduction = "pca", dims = 1:40)
+  
+  saveRDS(Query_data, file = paste0(outdir, sample,"/",sample,"_Xenium_SCTransform.RDS"))
+  
+  return(Query_data)
+  
+}
+
+Xen_processed_data <- list()
+
+
+idx <- 1
+while (idx <= length(Xenium_samples_input)){
+  data <- run_preprocessing(vis_clusters[[idx]], Xenium_samples_input[idx], output_dir)
+  Xen_processed_data <- c(Xen_processed_data, data)
+}
+
+
+
+```
+
+```{r label_transfer_ref}
+
+Xenium_out_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Xenium/"
+
+run_label_transfer_Xenium_ref <- function(data, sample){
+  
+  anchors <- FindTransferAnchors(reference = Ref_data_subset, 
+                               query = data, 
+                               normalization.method = "SCT")
+  predictions.assay <- TransferData(anchorset = anchors, 
+                                  refdata = Ref_data_subset$celltype_major,  
+                                  weight.reduction = data[["pca"]], 
+                                  dims = 1:40) 
+  rownames(predictions.assay) <- rownames(data@meta.data)
+  write.csv(predictions.assay, file=paste0(Xenium_out_dir, sample, "_label_transfer.csv"))
+  
+  
+  data$celltype_major <- predictions.assay$predicted.id
+    
+  return(data)
+}
+
+
+Xen_1302A_lt <- run_label_transfer_Xenium_ref(Xen_1302A_pro,"Xen_1302A")
+Xen_1956A_lt <- run_label_transfer_Xenium_ref(Xen_1956A_pro,"Xen_1956A")
+Xen_4851A_lt <- run_label_transfer_Xenium_ref(Xen_4851A_pro,"Xen_4851A")
+
+
+```
+
+```{r label_transfer_ref}
+
+Xenium_out_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Xenium/"
+
+xenium_lt <- function(RefData, data, sample){
+  
+  anchors <- FindTransferAnchors(reference = RefData, 
+                               query = data, 
+                               normalization.method = "SCT")
+  predictions.assay <- TransferData(anchorset = anchors, 
+                                  refdata = RefData$celltype_major,  
+                                  weight.reduction = data[["pca"]], 
+                                  dims = 1:40) 
+  rownames(predictions.assay) <- rownames(data@meta.data)
+  write.csv(predictions.assay, file=paste0(Xenium_out_dir, sample, "_scRNA_label_transfer.csv"))
+  
+  
+  data$celltype_major <- predictions.assay$predicted.id
+    
+  return(data)
+}
+
+
+
+Xen_1302A_lt_sc <- xenium_lt(X1302A_lt,Xen_1302A_pro,"Xen_1302A")
+Xen_1956A_lt_sc <- xenium_lt(X1956A_lt,Xen_1956A_pro,"Xen_1956A")
+Xen_4851A_lt_sc <- xenium_lt(X4851A_lt,Xen_4851A_pro,"Xen_4851A")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r save_objects}
+
+
+#saveRDS(Xen_1302A_pro, filename = "I:/GML001-Q1851/Andrew_C/Pfizer/Xenium/Xen_1302A_processed.RDS")
+#saveRDS(Xen_1956A_pro, filename = "I:/GML001-Q1851/Andrew_C/Pfizer/Xenium/Xen_1956A_processed.RDS")
+#saveRDS(Xen_4851A_pro, filename = "I:/GML001-Q1851/Andrew_C/Pfizer/Xenium/Xen_4851A_processed.RDS")
+
+
+saveRDS(Xen_1302A_lt_sc, file = "I:/GML001-Q1851/Andrew_C/Pfizer/Xenium/Xen_1302A_lable_transfer.RDS")
+saveRDS(Xen_1956A_lt_sc, file = "I:/GML001-Q1851/Andrew_C/Pfizer/Xenium/Xen_1956A_lable_transfer.RDS")
+saveRDS(Xen_4851A_lt_sc, file = "I:/GML001-Q1851/Andrew_C/Pfizer/Xenium/Xen_4851A_lable_transfer.RDS")
+```
+
+
+
+```{r }
+
+VlnPlot(Xen_1302A, features = c("nFeature_Xenium", "nCount_Xenium"), ncol = 2, pt.size = 0)
+```
+
+
+
+
+```{r export_count_matrix}
+export_count_matrix <- function(data, sample){
+  
+  raw_data <- as.data.frame(data@assays$SCT@counts)
+  SCT_data <- as.data.frame(data@assays$SCT@data)
+  
+  write.csv(paste0(raw_data, file = "I:/GML001-Q1851/Andrew_C/Pfizer/Xenium/Label_Transfer/", sample, "_raw_counts.csv"))
+  write.csv(paste0(SCT_data, file = "I:/GML001-Q1851/Andrew_C/Pfizer/Xenium/Label_Transfer/", sample, "_SCT_counts.csv"))
+  
+}
+export_count_matrix(Xen_1302A_lt_sc, "Xen_1302A")
+export_count_matrix(Xen_1956A_lt_sc, "Xen_1956A")
+export_count_matrix(Xen_4851A_lt_sc, "Xen_4851A")
+
+```
+

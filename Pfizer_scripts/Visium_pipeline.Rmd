@@ -1,0 +1,338 @@
+---
+title: "Visium_pipeline"
+output: html_document
+date: "2023-09-07"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+
+#removes all data from global environment
+rm(list = ls())
+```
+
+## Import Libraries 
+```{r librarys}
+library(Seurat)
+library(ggplot2)
+```
+
+
+## Setup Working Directories
+```{r wd}
+input_dir <- "I:/GMLSC1-Q2051/Pfizer/Visium/RAW_DATA/Pfizer/"
+input_dir_sc <- "I:/GML001-Q1851/Andrew_C/Pfizer/scRNA/"
+output_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Visium/"
+```
+
+
+## Import Visium Data and run QC + Processing 
+```{r Visium_Data_Inport}
+
+###Load scRNA data list
+
+lbtr_list <- readRDS(file = paste0(input_dir_sc, "scRNA_list.RDS"))
+
+
+###Process Visium Data
+import_visium <- function(sample, input_dir , output_dir, min_genes = 10, min_spots = 3, dim = 30){
+  
+  ### Set up data Directory
+  outdir <- paste0(output_dir,sample,"/")
+  dir_create(outdir)
+  
+  print(paste0("Import - Importing ", sample, " data..."))
+  ###Load Visium data
+  data <- Load10X_Spatial(data.dir = paste0(input_dir,sample, "/outs/"))
+  
+  
+  ###Run QC
+  
+  # QC - removing Mitochondrial and Ribosomal Genes
+  print("QC - removing Mitochondrial and Ribosomal Genes...")
+  data <- PercentageFeatureSet(data, "^MT-", col.name = "percent_mito", assay="Spatial")
+  data <- PercentageFeatureSet(data, "^RP[SL]", col.name = "percent_ribo", assay="Spatial")
+
+  ## check the feature and count distribution before qc
+  feats <- c("nFeature_Spatial", "nCount_Spatial")
+        
+  # filtering 
+  selected_c <- WhichCells(data, expression = nFeature_Spatial > min_genes)
+  length(selected_c)
+    
+  selected_f <- rownames(data)[Matrix::rowSums(data) > min_spots]
+  length(selected_f)
+    
+  data <- subset(data, features = selected_f, cells = selected_c)
+  
+  print("Processing - Normalising data and running PCA...") 
+  #Run Processing 
+  d <- SCTransform(data, assay = "Spatial", verbose = FALSE)
+  d <- RunPCA(d, assay = "SCT", verbose = FALSE)
+  d <- FindNeighbors(d, reduction = "pca", dims = 1:dim)
+  
+  #save Normalised Object
+  saveRDS(d, file = paste0(outdir,sample,"_normalised_seurat.RDS"))
+  
+  return(d)
+}
+
+
+#List of sample names
+vis_sample_list <- c("VLP78_A",  "VLP78_D",  "VLP79_A",  "VLP79_D",  "VLP80_A",  "VLP80_D",  "VLP81_A",  "VLP82_A",  "VLP82_D",  "VLP83_A",  "VLP83_D")
+
+
+#Inport and Normalise each sample
+vis_data <- list()
+
+for (sample in vis_sample_list){
+  data <- import_visium(sample, input_dir = input_dir, output_dir = output_dir)
+  vis_data <- c(vis_data, data)
+  
+}
+
+saveRDS(vis_data, file = paste0(output_dir,"all_visium_normalised.RDS"))
+
+```
+
+
+# Run Visium Clustering
+```{r vis_norm}
+
+get_clusters <- function(data, res = 0.5, dim = 30){
+  
+  data <- FindClusters(data, resolution = res,verbose = FALSE)
+  data <- RunUMAP(data, reduction = "pca", dims = 1:dim)
+  
+  return(data)
+}
+
+
+### Visium clusters with 0.2 res
+vis_clusters <-list()
+
+for(sample in vis_data[]){
+  data <- get_clusters(sample, res = 0.2)
+  vis_clusters <- c(vis_clusters,data)
+}
+
+
+```
+
+
+
+## Plot visium clusters
+```{r plot_vis_clust}
+
+
+plot_visium_clusters <- function(data, sample, outdir, adding_graph = FALSE){
+  
+  clust_dir <- paste0(outdir,sample,"/clusters/")
+  dir.create(clust_dir)
+  
+  plot <- SpatialDimPlot(data, group.by = "seurat_clusters")
+  ggsave(paste0(clust_dir,sample,"_clusters.pdf"), plot)
+  
+  
+  if (adding_graph == TRUE){
+    #print("adding graph")
+    return(plot)
+  }
+   
+}
+
+plot_list <- list()
+## Plot data
+idx <- 1
+while (idx <= length(vis_sample_list)){
+  plot <- plot_visium_clusters(vis_clusters[[idx]], vis_sample_list[idx], output_dir, i = idx)
+  plot_list[[idx]] <- plot 
+  idx <- idx + 1
+}
+
+```
+
+
+## Run Label Transfer using MATCHED scRNA data
+```{r label_transfer}
+
+
+##using matching scRNA data
+
+label_transfer <- function(sc_data, st_data, sample, outdir){
+  
+  lt_dir <- paste0(outdir,sample,"/label_transfer/")
+  dir.create(lt_dir)
+  
+  print(paste0("Label Transfer - Running label transfer for ", sample, " matched scRNA and Visium Data ..."))
+  anchors <- FindTransferAnchors(reference = sc_data, query = st_data, normalization.method = "SCT", verbose = FALSE)
+  
+  predictions.assay <- TransferData(anchorset = anchors, refdata = sc_data$celltype_major, prediction.assay = TRUE, weight.reduction = st_data[["pca"]], dims = 1:30 , verbose = FALSE)
+  predictions.assay1 <- TransferData(anchorset = anchors, refdata = sc_data$celltype_major, prediction.assay = FALSE, weight.reduction = st_data[["pca"]], dims = 1:30 , verbose = FALSE)
+  predictions.assay2 <- TransferData(anchorset = anchors, refdata = sc_data$celltype_minor, prediction.assay = FALSE, weight.reduction = st_data[["pca"]], dims = 1:30 , verbose = FALSE)
+  predictions.assay3 <- TransferData(anchorset = anchors, refdata = sc_data$seurat_clusters, prediction.assay = FALSE, weight.reduction = st_data[["pca"]], dims = 1:30 , verbose = FALSE)
+  
+  #used for adding a pridction assay to seurat object
+  st_data[["predictions_celltype_major"]] <- predictions.assay
+ 
+  rownames(predictions.assay1) <- colnames(st_data)
+  rownames(predictions.assay2) <- colnames(st_data)
+  rownames(predictions.assay3) <- colnames(st_data)
+  
+  #Export Label transfer to file
+  write.csv(predictions.assay1, file=paste0(lt_dir,sample,"_label_transfer.csv"))
+  
+  #Add top label for each spot to seurat object
+  st_data$celltype_major <- predictions.assay1$predicted.id
+  st_data$celltype_minor <- predictions.assay2$predicted.id
+  st_data$celltype_clusters <- predictions.assay3$predicted.id
+  
+  saveRDS(st_data, file = paste0(lt_dir,sample,"_label_transfer.RDS"))
+  
+  return(st_data)
+}
+
+
+#Run data
+vis_lb_tf <- list()
+
+idx <-1 
+while(idx <= length(vis_sample_list)){
+  data <- label_transfer(lbtr_list[[idx]],vis_clusters[[idx]], vis_sample_list[idx], output_dir)
+  vis_lb_tf <- c(vis_lb_tf, data)
+  idx <- idx + 1
+}
+
+```
+
+
+```{r}
+#### Load Label Transfered Visium Objects
+load_Visium <- function(sample, outdir){
+  data <- readRDS(paste0(outdir,sample,"/label_transfer/",sample,"_label_transfer.RDS"))
+  return(data)
+}
+
+vis_sample_list <- c("VLP78_A",  "VLP78_D",  "VLP79_A",  "VLP79_D",  "VLP80_A",  "VLP80_D",  "VLP81_A",  "VLP82_A",  "VLP82_D",  "VLP83_A",  "VLP83_D")
+vis_lb_tf <- list()
+
+
+for (sample in vis_sample_list){
+  data <- load_Visium(sample,output_dir)
+  vis_lb_tf <- c(vis_lb_tf, data)
+}
+
+
+
+```
+
+
+
+## Plot Spatial Visualisation of Label Transfer 
+```{r plot_label_transfer}
+
+
+
+###Plots the proportions of each cell type
+plot_lt <- function(data, sample, outdir, adding_graph = FALSE){
+  
+  lt_dir <- paste0(outdir,sample,"/label_transfer/")
+  dir.create(lt_dir)
+  
+  DefaultAssay(data) <- "predictions_celltype_major"
+  features <- rownames(data@assays$predictions_celltype_major@meta.features)
+  plot <- SpatialFeaturePlot(data, features = features, ncol = 4)
+  ggsave(paste0(lt_dir, sample,"_label_transfer_proportions.pdf"), plot, height = 15, width = 20)
+  print(plot)
+}
+
+
+### Plots the major cell type label
+cell_spots <- function(data, sample, outdir){
+  
+  lt_dir <- paste0(outdir,sample,"/label_transfer/")
+  dir.create(lt_dir)
+  
+  plot1 <- SpatialDimPlot(data, group.by = "celltype_major")
+  plot2 <- SpatialDimPlot(data, group.by = "celltype_minor")
+  plots <- plot1+plot2
+  ggsave(paste0(lt_dir, sample,"_cell_label_transfer.pdf"), plots)
+  print(plots)
+}
+
+
+
+idx <- 1
+
+while (idx <= length(vis_sample_list)){
+  plot_lt(vis_lb_tf[[idx]], vis_sample_list[idx], output_dir)
+  cell_spots(vis_lb_tf[[idx]], vis_sample_list[idx], output_dir)
+  idx <- idx + 1
+}
+
+
+```
+
+
+
+## Subset data to run Cell-Cell interaction analysis for tumour spots
+```
+
+
+
+
+
+```{r cluster_proportions_celltypes}
+
+color_dict <- list(
+  "Cancer Epithelial"="#A6CEE3",
+  "Plasmablasts"= "#1F78B4",     
+  "B-cells" = "#B2DF8A",      
+  "T-cells" =  "#33A02C",     
+  "CAFs" = "#FB9A99",          
+  "Myeloid" =  "#E31A1C" ,        
+  "Endothelial"= "#FDBF6F",
+  "PVL"= "#FF7F00"                  
+  )
+
+
+
+celltype_proportion <- function(data, sample){
+  cell_type_counts <- data@meta.data %>%
+    group_by(seurat_clusters, label_transfer) %>%
+    summarise(count = n())
+  
+ cell_type_counts <- cell_type_counts %>%
+  mutate(color = unlist(color_dict[label_transfer]))
+ 
+ unique_labels <- unique(cell_type_counts$label_transfer)
+  
+ # Create a named vector of corresponding colors
+ legend_colors <- unlist(color_dict[unique_labels])
+
+ plot <- ggplot(cell_type_counts, aes(y = count, x = seurat_clusters, fill = label_transfer, color = label_transfer)) +
+    geom_bar(position = "fill", stat = "identity", width = 0.8) +
+    scale_fill_manual(values = unlist(color_dict)) +
+    scale_color_manual(values = unlist(color_dict)) +
+    coord_flip() + theme_classic() + labs(x = "Cluster", y = "Proportion")
+  
+  
+  ggsave(paste0(OUT_DIR,sample,"_celltype_proportions.pdf"))
+  print(plot)
+}
+
+celltype_proportion(V82_A, "V82_A")
+celltype_proportion(V82_D, "V82_D")
+celltype_proportion(V83_A, "V83_A")
+celltype_proportion(V83_D, "V83_D")
+
+
+
+```
+
+
+
