@@ -26,6 +26,7 @@ library(ggplot2)
 ```{r wd}
 input_dir <- "I:/GMLSC1-Q2051/Pfizer/Visium/RAW_DATA/Pfizer/"
 input_dir_sc <- "I:/GML001-Q1851/Andrew_C/Pfizer/scRNA/"
+
 output_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Visium/"
 ```
 
@@ -217,6 +218,8 @@ load_Visium <- function(sample, outdir){
   return(data)
 }
 
+#Other_inputs_needed
+output_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Visium/"
 vis_sample_list <- c("VLP78_A",  "VLP78_D",  "VLP79_A",  "VLP79_D",  "VLP80_A",  "VLP80_D",  "VLP81_A",  "VLP82_A",  "VLP82_D",  "VLP83_A",  "VLP83_D")
 vis_lb_tf <- list()
 
@@ -279,9 +282,79 @@ while (idx <= length(vis_sample_list)){
 
 
 
-## Subset data to run Cell-Cell interaction analysis for tumour spots
+```{r feature plots}
+visium_feature_plots <- function(data, sample, outdir, features){
+  plot <- SpatialFeaturePlot(data, features = features)
+  print(plot)
+  ggsave(paste0(outdir,sample,"/",sample,"_KAT6_features.pdf"),plot, height = 15,width = 20)
+}
+
+KAT6_feature_list <- c("KAT6A", "KAT6B", "ESR1","BRPF1","MEAF6","ING5")
+
+idx <- 1
+while (idx <= length(vis_sample_list)){
+  visium_feature_plots(vis_lb_tf[[idx]],vis_sample_list[idx],output_dir,KAT6_feature_list)
+  idx <- idx + 1
+}
+
 ```
 
+
+
+
+## CDK4/6 Expression and E2F pathway activation
+```{r e2f_pathway}
+E2F_list <- c("MCM2","SMC1A","POLA2","MCM7","NAA38","CBX5","HNRNPD","NAP1L1","LBR","MCM4","RFC2","BRCA2","HMMR","RNASEH2A","CHEK2","POLD3","SLBP","CDC25A","USP1","EXOSC8","RFC3","BARD1","PSIP1","MCM6","LIG1","ORC6","RPA3","POLD2","WEE1","TK1","PLK4","GINS3","RACGAP1","NUP107","NCAPD2","CENPE","RAD21","DEK","TCF19","PAICS","AURKA","KIF18B","KIF22","DEPDC1","DUT","LMNB1","RAD51AP1","KIF4A","ASF1B","BUB1B","ESPL1","SPAG5","CKS2","SPC24","EZH2","KPNA2",
+"TACC3","CKS1B","HMGA1","ATAD2","TMPO","KIF2C","MELK","CDCA8","DLGAP5","ANP32E","CDKN2C","MXD3","CENPM","SPC25","MYBL2","CDC20","UBE2T","PLK1","MKI67","RRM2","MAD2L1","AURKB","CDKN3","CDCA3","CDK1","TOP2A","PTTG1","BIRC5","CCNB2","SMC4","HMGB")
+
+E2F_enrichment <- function (data) {
+  pbmc3k.final <- irGSEA.score(object = data, assay = "Spatial", 
+                             slot = "data", seeds = 123, ncores = 1,
+                             min.cells = 3, min.feature = 1,
+                             custom = TRUE, geneset = E2F_list, 
+                             species = "Homo sapiens", category = "H",  
+                             subcategory = NULL, geneid = "symbol",
+                             method = c("AUCell", "UCell", "singscore", 
+                                        "ssgsea", "JASMINE", "viper"),
+                             aucell.MaxRank = NULL, ucell.MaxRank = NULL, 
+                             kcdf = 'Gaussian')
+  result.dge <- irGSEA.integrate(object = pbmc3k.final, 
+                               group.by = "celltype_major",
+                               metadata = NULL, col.name = NULL,
+                               method = c("AUCell","UCell","singscore",
+                                          "ssgsea", "JASMINE", "viper"))
+  return(result.dge)
+}
+
+eg <- E2F_enrichment(data = vis_lb_tf[[1]])
+
+
+
+hallmark_heatmap <- function(data){
+  
+  list_gene <- c()
+  for (i in unique(result.dge$singscore$Name)){
+    list_idx <- as.integer(strsplit(i, "geneset")[[1]][[2]])
+    list_gene <- c(list_gene,E2F_list[[list_idx]])
+    
+  }
+       
+  
+  irGSEA.heatmap.plot <- irGSEA.heatmap(object = data, 
+                                      method = "RRA",
+                                      top = 50 ,show.geneset = list_gene
+                                      )
+  plot <- irGSEA.heatmap.plot
+  #ggsave(paste0(OUT_DIR,sample,'_hallmark.pdf'),height=8,width=12, plot)
+  print(plot)
+}
+
+
+
+hallmark_heatmap(eg)
+
+
+```
 
 
 
@@ -333,6 +406,7 @@ celltype_proportion(V83_D, "V83_D")
 
 
 ```
+
 
 
 

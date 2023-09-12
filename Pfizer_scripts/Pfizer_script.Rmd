@@ -1,0 +1,1463 @@
+---
+title: "Pfizer_scRNA_analysis"
+output: html_document
+date: "2023-08-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+
+#removes all data from global environment
+rm(list = ls())
+```
+
+```{r librarys}
+library(Seurat)
+library(ggplot2)
+library(sctransform)
+library(xfun)
+library(harmony)
+library(dplyr)
+library(purrr)
+library(SeuratDisk)
+library(scCustomize)
+library(EnhancedVolcano)
+library(UCell)
+library(irGSEA)
+library(tidyverse)
+library(RColorBrewer)
+library(edgeR)
+library(SingleCellExperiment)
+library(scuttle)
+library(statmod)
+```
+
+```{r import_data}
+#Set working directory
+DATA_DIR <- "I:/GMLSC1-Q2051/Pfizer/Analysis_Results/Jacky/"
+OUT_DIR <- "I:/GML001-Q1851/Andrew_C/Pfizer/"
+
+### import data
+
+obj_6481A <- readRDS(file = paste0(DATA_DIR,"plots/AVD_61FEX_6481A_Rep1/seurat_obj.RDS"))
+obj_6481A$sample <- '6481A'
+obj_6481A$lumtype <- 'LumA'
+
+obj_6841A <- readRDS(file = paste0(DATA_DIR,"plots/AVD_61FEX_6841A_Rep1/seurat_obj.RDS"))
+obj_6841A$sample <- '6841A'
+obj_6841A$lumtype <- 'LumA'
+
+# LumB
+obj_5626A <- readRDS(file = paste0(DATA_DIR,"plots/AVD_61FEX_5626A_Rep1/seurat_obj.RDS"))
+obj_5626A$sample <- '5626A'
+obj_5626A$lumtype <- 'LumB'
+
+obj_9982A <- readRDS(file = paste0(DATA_DIR,"plots/AVD_61FEX_9982A_Rep1/seurat_obj.RDS"))
+obj_9982A$sample <- '9982A'
+obj_9982A$lumtype <- 'LumB'
+
+
+#list of seurat objects
+data_list <-list(obj_6481A,obj_6841A,obj_5626A,obj_9982A)
+
+#list of sample names
+sample_list <- c("6481A","6841A","5626A","9982A")
+
+```
+
+
+
+```{r import_ref_data}
+
+###load References dataset
+reference  <- LoadH5Seurat(paste0(DATA_DIR,"BC_atlas_xe.h5seurat"))
+
+# Subset to ER+ (LumA&LumB)
+reference_processed <- subset(reference, subset = subtype == "ER+")
+
+# Run label transfer
+reference_processed <- reference_processed[,unname(which(colSums(GetAssayData(reference_processed))!=0))]
+reference_processed <- SCTransform(reference_processed)
+
+
+Ref_data <- reference_processed
+
+Idents(Ref_data) <- "celltype_major"
+Ref_data_subset <- subset(Ref_data, idents = "Normal Epithelial", invert = TRUE)
+
+```
+
+
+```{r label_transfer}
+run_label_transfer <- function(Ref_data, Query_data, out_dir = "H:/Pfizer/", fname) {
+  # Below has been run previously in each sc_obj (although it was using 30 PCA dims)
+  
+  # sc_obj <- sc_obj[,unname(which(colSums(GetAssayData(sc_obj))!=0))]
+  # countsData <- sc_obj@assays$RNA@counts
+  # Query_data <- CreateSeuratObject(counts = as.data.frame(matrix(as.numeric(countsData), 
+  #                                                                ncol = ncol(countsData)),
+  #                                                         row.names=row.names(countsData)), 
+  #                                  project = "SC Breast Cancer", assay = "RNA")
+  # Query_data <- CreateSeuratObject(counts = Query_data@assays$RNA@counts,meta.data = Query_data@meta.data)
+  # Query_data <- SCTransform(Query_data, ncells = 2000, verbose = TRUE)
+  # Query_data <- RunPCA(Query_data, assay = "SCT", verbose = TRUE, npcs=40)
+  # Query_data <- FindNeighbors(Query_data, reduction = "pca", dims = 1:40)
+  # Query_data <- FindClusters(Query_data, verbose = TRUE, resolution = 1.0)
+  # Query_data <- RunUMAP(Query_data, reduction = "pca", dims = 1:40)
+  
+  anchors <- FindTransferAnchors(reference = Ref_data, 
+                                 query = Query_data, 
+                                 normalization.method = "SCT")
+  sc_obj.predictions.assay <- TransferData(anchorset = anchors, 
+                                              refdata = Ref_data$celltype_major,  
+                                              weight.reduction = Query_data[["pca"]], 
+                                              dims = 1:40) 
+  sc_obj.predictions.assay1 <- TransferData(anchorset = anchors, 
+                                           refdata = Ref_data$celltype_minor,  
+                                           weight.reduction = Query_data[["pca"]], 
+                                           dims = 1:40) 
+  rownames(sc_obj.predictions.assay) <- colnames(Query_data)
+  rownames(sc_obj.predictions.assay1) <- colnames(Query_data)
+  
+  labels <- cbind(sc_obj.predictions.assay,sc_obj.predictions.assay1)
+  write.csv(labels, file=paste0(out_dir, fname))
+  
+  Query_data$celltype_major <- sc_obj.predictions.assay$predicted.id
+  Query_data$celltype_minor <- sc_obj.predictions.assay1$predicted.id
+    
+  return(Query_data)
+}
+
+```
+
+
+
+```{r run_label_transfer}
+lbtr_list <- list()
+subset_lbtr_list <- c()
+subset_combo_list <- c()
+
+idx <- 1
+
+while (idx <= length(sample_list)){
+  data <- run_label_transfer(Ref_data_subset, data_list[[idx]], fname = paste0(sample_list[idx],"_label_transfer_subset.csv"))
+  data2 <- run_label_transfer(Ref_data, data_list[[idx]], fname = paste0(sample_list[idx],"_label_transfer.csv"))
+  data3 <- run_label_transfer(combo_data_subset, data_list[[idx]], fname = paste0(sample_list[idx],"_label_transfer_combo.csv"))
+  
+  subset_lbtr_list <- c(subset_lbtr_list, data)
+  lbtr_list <- c(lbtr_list, data2)
+  subset_combo_list <- c(subset_combo_list, data3)
+  idx <- idx+1
+}
+
+
+
+idx <- 1
+while(idx <= length(sample_list)){
+  SaveH5Seurat(subset_lbtr_list[[idx]], filename = paste0(OUT_DIR, sample_list[[idx]], "_seurat.RDS"))
+  idx <- idx + 1
+}
+
+
+```
+
+```{r volcano_plot}
+volplot <- function(res, title) {
+  library(EnhancedVolcano)
+  p <- EnhancedVolcano(
+    res,
+    lab = rownames(res),
+    subtitle = NULL,
+    title = title,
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    xlab = bquote( ~ Log[2] ~ 'fold change'),
+    ylab = bquote( ~ -Log[10] ~ 'FDR'),
+    pCutoff = 0.05,
+    FCcutoff = 0.75,
+    pointSize = 2.0,
+    labSize = 4.0,
+    colAlpha = 3 / 5,
+    legendLabSize = 12,
+    legendIconSize = 4.0,
+    legendPosition = 'top',
+    drawConnectors = TRUE,
+    widthConnectors = 0.5,
+    colConnectors = 'black',
+    caption = NULL # No total=XXX variables
+  )
+  return(p)
+}
+```
+
+
+
+```{r }
+########## DEG's
+# This code does DEG between celltypes in comps using Seurat's default wilcoxon rank test
+
+immune.combined <- Merge_Seurat_List(lbtr_list)
+immune.combined.sub <- Merge_Seurat_List(subset_lbtr_list)
+DefaultAssay(immune.combined.sub) <- "RNA"
+DefaultAssay(immune.combined) <- "RNA"
+Idents(immune.combined.sub) <- 'celltype_major'
+Idents(immune.combined) <- 'celltype_major'
+
+
+comps <- c("Cancer Epithelial", "T-cells","B-cells", "CAFs")
+
+umap_plots <- list()
+vol_plots <- list()
+markers <- list()
+
+for (i in seq_along(comps)) {
+  comp <- comps[[i]]
+  m <- FindMarkers(immune.combined.sub, ident.1 = "LumB", ident.2 = "LumA", group.by = 'lumtype', subset.ident=comp)
+  # p1 <- FeaturePlot(immune.combined, features = rownames(head(arrange(m, desc(avg_log2FC)), n=3)), split.by = "lumtype", max.cutoff = 3,
+  #                   cols = c("grey", "red"))
+  p2 <- volplot(m, paste0(paste0(comp," (LumB)"), " vs ", (paste0(comp," (LumA)"))))
+  markers[[i]] <- m
+  # umap_plots[[i]] <- p1
+  vol_plots[[i]] <- p2
+}
+
+idx <- 1
+
+while(idx <= length(comps)){
+  ggsave(paste0(OUT_DIR, comps[[idx]],"_LumA_vs_LumB_volcano_sub.pdf"),vol_plots[[idx]],width = 10, height = 8)
+  idx <- idx + 1
+}
+
+
+ 
+
+```
+
+
+
+```{r dim_plots}
+
+idx <- 1
+while (idx <= length(sample_list)){
+  plot <- DimPlot(lbtr_list[[idx]], group.by = "celltype_major", label = TRUE)
+  #ggsave(paste0(OUT_DIR,sample_list[idx],"_celltypes.pdf"), plot)
+  print(plot)
+  idx <- idx + 1
+}
+
+
+idx <- 1
+while (idx <= length(sample_list)){
+  plot <- DimPlot(subset_lbtr_list[[idx]], group.by = "celltype_major", label = TRUE)
+  #ggsave(paste0(OUT_DIR,sample_list[idx],"_celltypes_subset.pdf"), plot)
+  print(plot)
+  idx <- idx + 1
+}
+
+idx <- 1
+while (idx <= length(sample_list)){
+  plot <- DimPlot(subset_lbtr_list[[idx]], group.by = "celltype_minor", label = TRUE)
+  #ggsave(paste0(OUT_DIR,sample_list[idx],"_celltypes_subset.pdf"), plot)
+  print(plot)
+  idx <- idx + 1
+}
+
+```
+
+
+```{r marker_gene_analysis}
+
+marker_features <- c("CD3E","CD4","CD3D", #T cells
+                     "CD79A","CD79B", "CD22", #B cells
+                     "CCND1","ESR1","GATA3", "ERBB2", # Tumour
+                     "LYZ",#"CCR2", #Monocytes
+                     #"KRT19", #LumA
+                     #"GRB7", #LumB
+                     "PECAM1","VWF", #Endothealial
+                     "COL1A1", "COL3A1" # CAFs
+                     )
+
+idx <- 1
+while (idx <= length(sample_list)){
+  plot <- FeaturePlot(subset_lbtr_list[[idx]], features = marker_features)
+  #ggsave(paste0(OUT_DIR,sample_list[idx],"_celltypes_subset.pdf"), plot)
+  print(plot)
+  idx <- idx + 1
+} 
+
+idx <- 1
+while (idx <= length(sample_list)){
+  plot <- DotPlot(subset_lbtr_list[[idx]], features = marker_features, group.by = "celltype_major")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  #ggsave(paste0(OUT_DIR,sample_list[idx],"_celltypes_subset.pdf"), plot)
+  print(plot)
+  idx <- idx + 1
+}
+
+
+idx <- 1
+while (idx <= length(sample_list)){
+  plot <- DotPlot(subset_lbtr_list[[idx]], features = marker_features, group.by = "celltype_major")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  #ggsave(paste0(OUT_DIR,sample_list[idx],"_celltypes_subset.pdf"), plot)
+  print(plot)
+  idx <- idx + 1
+}
+
+Plasma_vs_bcell_features <- c("NUCB2","FNDC3B","XBP1","FKBP11","ANKRD28","CD38","IGKC","MZB1","IGHG3","TNFRSF17","IGHG1","IGLV3-1","IGHG4","IGLL5","PIM2","ITM2C",
+"SDC1","CAV1","SKAMF7","GAS6","PRDM1","HSPA1B","AQP3","ERN1","TRIB1","DUSP5","CD63","NEAT1")
+
+
+idx <- 1
+while (idx <= length(sample_list)){
+  plot <- DotPlot(subset_lbtr_list[[idx]], features = Plasma_vs_bcell_features, group.by = "celltype_major")+ theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  #ggsave(paste0(OUT_DIR,sample_list[idx],"_celltypes_subset.pdf"), plot)
+  print(plot)
+  idx <- idx + 1
+}
+
+```
+
+
+
+
+
+
+
+```{r hallmarks}
+
+# Calculate enrichment scores
+hallmark <- function(sample_name) {
+  test_5626A  <- subset(immune.combined, subset=sample==sample_name )
+  pbmc3k.final <- irGSEA.score(object = test_5626A, assay = "RNA", 
+                             slot = "data", seeds = 123, ncores = 1,
+                             min.cells = 3, min.feature = 1,
+                             custom = F, geneset = NULL, msigdb = T, 
+                             species = "Homo sapiens", category = "H",  
+                             subcategory = NULL, geneid = "symbol",
+                             method = c("AUCell", "UCell", "singscore", 
+                                        "ssgsea", "JASMINE", "viper"),
+                             aucell.MaxRank = NULL, ucell.MaxRank = NULL, 
+                             kcdf = 'Gaussian')
+  result.dge <- irGSEA.integrate(object = pbmc3k.final, 
+                               group.by = "celltype_major",
+                               metadata = NULL, col.name = NULL,
+                               method = c("AUCell","UCell","singscore",
+                                          "ssgsea", "JASMINE", "viper"))
+  return(result.dge)
+}
+
+```
+
+
+```{r}
+#hm_6481A <- hallmark("6481A")
+#hm_6841A <- hallmark("6841A")
+#hm_5626A <- hallmark("5626A")
+#hm_9982A <- hallmark("9982A")
+
+#saveRDS(hm_6481A,"I:/GML001-Q1851/Andrew_C/Pfizer/hm_6481A.rds")
+#saveRDS(hm_6841A,"I:/GML001-Q1851/Andrew_C/Pfizer/hm_6841A.rds")
+#saveRDS(hm_5626A,"I:/GML001-Q1851/Andrew_C/Pfizer/hm_5626A.rds")
+#saveRDS(hm_9982A,"I:/GML001-Q1851/Andrew_C/Pfizer/hm_9982A.rds")
+
+
+hm_6481A <- readRDS("I:/GML001-Q1851/Andrew_C/Pfizer/hm_6481A.rds")
+hm_6841A <- readRDS("I:/GML001-Q1851/Andrew_C/Pfizer/hm_6841A.rds")
+hm_5626A <- readRDS("I:/GML001-Q1851/Andrew_C/Pfizer/hm_5626A.rds")
+hm_9982A <- readRDS("I:/GML001-Q1851/Andrew_C/Pfizer/hm_9982A.rds")
+
+
+hallmark_list <- list(hm_6481A,hm_6841A,hm_5626A,hm_9982A)
+
+```
+
+
+```{r}
+hallmark_heatmap <- function(sample,data){
+  irGSEA.heatmap.plot <- irGSEA.heatmap(object = data, 
+                                      method = "RRA",
+                                      top = 50, 
+                                      show.geneset = NULL)
+  plot <- irGSEA.heatmap.plot + ggtitle(paste0(sample,' GSEA'))
+  ggsave(paste0(OUT_DIR,sample,'_hallmark.pdf'),height=8,width=12, plot)
+  print(plot)
+}
+```
+
+
+
+```{r plot_heatmap}
+idx <- 1
+while (idx <= length(sample_list)){
+  hallmark_heatmap(sample_list[idx], hallmark_list[[idx]])
+  idx <- idx+1
+}
+```
+
+```{r combine_dfs}
+
+get_rra_df <- function(data){
+  df <- data[["RRA"]]
+  return(df)
+}
+
+rra_6481A <- get_rra_df(hm_6481A)
+rra_6481A["sample"] <- "6481A"
+
+rra_6841A <- get_rra_df(hm_6841A)
+rra_6841A["sample"] <- "6841A"
+
+rra_5626A <- get_rra_df(hm_5626A)
+rra_5626A["sample"] <- "5626A"
+
+rra_9982A <- get_rra_df(hm_9982A)
+rra_9982A["sample"] <- "9982A"
+
+
+#combine dfs
+combined_data <- rbind(rra_6481A, rra_6841A,rra_5626A,rra_9982A)
+```
+
+
+```{r}
+
+combined_data <- combined_data[, -which(names(combined_data) == "method")]
+
+```
+
+
+
+```{r heatmap}
+cluster <- NULL
+direction <- NULL
+pvalue <- NULL
+cell <- NULL
+value <- NULL
+Name <- NULL
+cluster.levels <- NULL
+show.geneset <- NULL
+top <- 50
+cluster_rows = T
+significance.color = NULL
+cluster.color = NULL
+direction.color = NULL
+rowname.fointsize = 7
+heatmap.width = 46
+heatmap.heigh = 19.5
+cluster.levels = NULL
+method = "RRA"
+
+
+sig.genesets.heatmap <- combined_data %>%
+    dplyr::mutate(cell = stringr::str_c(cluster, direction,sample, sep = "_")) %>%
+    dplyr::select(c("Name", "pvalue", "cell")) %>%
+    dplyr::mutate(pvalue = dplyr::if_else(pvalue < 0.05, "significant","no significant")) %>%
+    tidyr::spread(cell, pvalue, fill = "no significant") %>%
+    tibble::column_to_rownames(var = "Name") 
+
+if (length(unique(combined_data$cluster)) != 0.5*ncol(sig.genesets.heatmap)) {
+  cell.name <- c(stringr::str_c(unique(combined_data$cluster), c("up"), sep = "_"),
+                   stringr::str_c(unique(combined_data$cluster), c("down"), sep = "_")
+                 )
+
+  
+    cell.name <- cell.name[!cell.name %in% colnames(sig.genesets.heatmap)]
+  #for (i in cell.name) {
+      #sig.genesets.heatmap <- sig.genesets.heatmap %>%
+      #  dplyr::mutate(!!rlang::sym(i):= "no significant")
+      sig.genesets.heatmap <- sig.genesets.heatmap[, sort(colnames(sig.genesets.heatmap))]
+   # }
+
+  }
+
+  sig.genesets.heatmap.text <- combined_data %>%
+    dplyr::mutate(cell = stringr::str_c(cluster, direction,sample, sep = "_")) %>%
+    dplyr::select(c("Name", "pvalue", "cell")) %>%
+    dplyr::mutate(pvalue = dplyr::case_when(  pvalue < 0.0001 ~ "****",
+                                              pvalue < 0.001 ~ "***",
+                                              pvalue < 0.01 ~ "**",
+                                              pvalue < 0.05 ~ "*",
+                                              pvalue >= 0.05 ~ " ",
+                                              TRUE ~ NA_character_)) %>%
+    tidyr::spread(cell, pvalue, fill = " ") %>%
+    tibble::column_to_rownames(var = "Name")
+
+  if (length(unique(combined_data$cluster)) != 0.5*ncol(sig.genesets.heatmap.text)) {
+    cell.name <- c(stringr::str_c(unique(combined_data$cluster), c("up"), sep = "_"),
+                   stringr::str_c(unique(combined_data$cluster), c("down"), sep = "_")
+                 )
+    cell.name <- cell.name[!cell.name %in% colnames(sig.genesets.heatmap.text)]
+    for (i in cell.name) {
+      sig.genesets.heatmap.text <- sig.genesets.heatmap.text %>%
+        dplyr::mutate(!!rlang::sym(i):= " ")
+      sig.genesets.heatmap.text <- sig.genesets.heatmap.text[, sort(colnames(sig.genesets.heatmap.text))]
+    }
+
+  }
+
+
+  # set levels
+  if (! purrr::is_null(cluster.levels)) {
+    cluster.direction <- NULL
+    heatmap.levels <- data.frame(cluster.direction = colnames(sig.genesets.heatmap)) %>%
+      dplyr::mutate(cluster = stringr::str_remove(cluster.direction, pattern = "_up|_down")) %>%
+      dplyr::arrange(factor(cluster, levels = cluster.levels)) %>%
+      dplyr::pull(cluster.direction)
+    sig.genesets.heatmap <- sig.genesets.heatmap %>% dplyr::select(heatmap.levels)
+    sig.genesets.heatmap.text <- sig.genesets.heatmap.text %>% dplyr::select(heatmap.levels)
+  }
+
+  # top rows
+  if (purrr::is_null(show.geneset)) {
+    sig.genesets.heatmap <- sig.genesets.heatmap %>% dplyr::slice_head(n = top)
+    sig.genesets.heatmap.text <- sig.genesets.heatmap.text %>% dplyr::slice_head(n = top)
+  }else{
+    sig.genesets.heatmap <- sig.genesets.heatmap[rownames(sig.genesets.heatmap) %in% show.geneset, ]
+    sig.genesets.heatmap.text <- sig.genesets.heatmap.text[rownames(sig.genesets.heatmap.text) %in% show.geneset, ]
+    if (purrr::is_null(sig.genesets.heatmap)) {
+      stop("All genesets of `show.geneset` are not in the `method`.")
+    }
+    if (! all(show.geneset %in% rownames(sig.genesets.heatmap))){
+      a <- show.geneset[! show.geneset %in% rownames(sig.genesets.heatmap)]
+      message(paste0("Some genesets of `show.geneset` are not in the `method` : ",a))
+    }
+  }
+ # heatmap body
+  if (purrr::is_null(significance.color)) {
+    significance.color <- structure(c("#D0DFE6FF","#f87669"), names = c(0,1))
+  }
+
+  sig.genesets.heatmap <- sig.genesets.heatmap %>%
+    tibble::rownames_to_column(var = "Name") %>%
+    tidyr::gather(cell, value, -Name) %>%
+    dplyr::mutate(value = dplyr::if_else(value=="no significant", 0, 1)) %>%
+    tidyr::spread(cell, value) %>%
+    tibble::column_to_rownames(var = "Name")
+
+  # set levels
+  if (! purrr::is_null(cluster.levels)) {
+    cluster.direction <- NULL
+    heatmap.levels <- data.frame(cluster.direction = colnames(sig.genesets.heatmap)) %>%
+      dplyr::mutate(cluster = stringr::str_remove(cluster.direction, pattern = "_up|_down")) %>%
+      dplyr::arrange(factor(cluster, levels = cluster.levels)) %>%
+      dplyr::pull(cluster.direction)
+    sig.genesets.heatmap <- sig.genesets.heatmap %>% dplyr::select(heatmap.levels)
+    sig.genesets.heatmap.text <- sig.genesets.heatmap.text %>% dplyr::select(heatmap.levels)
+  }
+
+   
+  sig.genesets.heatmap <- sig.genesets.heatmap %>%
+    select(
+        matches("down_6481A"), matches("down_6841A"), 
+        matches("down_5626A"), matches("down_9982A"), 
+        matches("up_6481A"), matches("up_6841A"), 
+        matches("up_5626A"), matches("up_9982A")
+    )  %>% select(matches(c(unique(combined_data$cluster))))
+  
+  sig.genesets.heatmap.text <- sig.genesets.heatmap.text %>%
+    select(
+        matches("down_6481A"), matches("down_6841A"), 
+        matches("down_5626A"), matches("down_9982A"), 
+        matches("up_6481A"), matches("up_6841A"), 
+        matches("up_5626A"), matches("up_9982A")
+    )  %>% select(matches(c(unique(combined_data$cluster))))
+
+  # top annotation
+  sig.genesets.heatmap.cluster <- stringr::str_remove(stringr::str_remove(colnames(sig.genesets.heatmap), pattern = "_up|_down"), pattern = "_5626A|_6481A|_6841A|_9982A")
+  sig.genesets.heatmap.direction <- stringr::str_extract(colnames(sig.genesets.heatmap), pattern = "up|down")
+  
+  get_lum_type <- function(string) {
+  if (grepl("_6481A|_6841A", string)) {
+    return("LumA")
+  } else if (grepl("_5626A|_9982A", string)) {
+    return("LumB")
+  } else {
+    return("Other")
+  }
+}
+  
+  Lum_list <- c()
+  for (column in colnames(sig.genesets.heatmap)){
+    Lum_list <- c(Lum_list, get_lum_type(column))
+  }
+  
+  
+  sig.genesets.heatmap.lum <- Lum_list
+  
+  
+  sig.genesets.heatmap.sample <- stringr::str_extract(colnames(sig.genesets.heatmap), pattern = "5626A|6481A|6841A|9982A")
+  
+  if (purrr::is_null(cluster.color)) {
+    cluster.color <- ggsci::pal_igv()(length(unique(sig.genesets.heatmap.cluster)))
+  }
+
+  if (purrr::is_null(direction.color)) {
+    direction.color <- c("#4575B4","#D73027")
+  }
+  
+  
+  Lum.color <- c("#FD92B9","#FDD092")
+  sample.color <- c("#2596BE", "#ABDBE3", "#1E961C","#93FD92")
+  
+  
+  heatmap.top.anno <- ComplexHeatmap::HeatmapAnnotation(Cluster = sig.genesets.heatmap.cluster,
+                                                        Direction = sig.genesets.heatmap.direction,
+                                                        Sample = sig.genesets.heatmap.sample,
+                                                        Lum = sig.genesets.heatmap.lum,
+                                                        show_legend = F,
+                                                        show_annotation_name = T,
+                                                        gap = grid::unit(1, "mm"),
+                                                        annotation_name_gp= grid::gpar(fontsize = 8),
+                                                        col = list(Cluster = c(structure(cluster.color,
+                                                                                         names = unique(sig.genesets.heatmap.cluster))),
+                                                                   Direction = c(structure(direction.color,
+                                                                                           names = c("down","up"))),
+                                                                   Sample = c(structure(sample.color,
+                                                                                           names = c("6481A","6841A","5626A","9982A"))),
+                                                                   Lum = c(structure(Lum.color,
+                                                                                           names = c("LumA","LumB")))
+                                                                   
+                                                                   ))
+  
+  
+  
+  
+  
+  
+  
+  sig.genesets.heatmap <- as.matrix(sig.genesets.heatmap)
+
+  heatmap.body <- ComplexHeatmap::Heatmap(sig.genesets.heatmap,
+                                          heatmap_width = grid::unit(heatmap.width, "cm"),
+                                          heatmap_height = grid::unit(heatmap.heigh, "cm"),
+                                          #name = method,
+                                          col = significance.color,
+                                          cluster_rows = cluster_rows,
+                                          row_names_max_width = ComplexHeatmap::max_text_width(
+                                            rownames(sig.genesets.heatmap),
+                                            gp = grid::gpar(fontsize = rowname.fointsize)
+                                          ),
+                                          cluster_columns = F,
+                                          top_annotation = heatmap.top.anno,
+                                          color_space = "RGB",
+                                          show_column_names = F,
+                                          row_names_side="right",
+                                          row_names_gp = grid::gpar(fontsize = rowname.fointsize),
+                                          rect_gp = grid::gpar(col = "white", lwd = 2),
+                                          show_heatmap_legend = F,
+                                          cell_fun = function(j, i, x, y, width, height, fill){
+                                            grid::grid.text(sig.genesets.heatmap.text[i, j], x, y, gp = grid::gpar(fontsize = 10))
+                                          })
+
+  # legend
+  # represent sigficant
+  lgd1 <- ComplexHeatmap::Legend(labels = c("no significant","significant"),
+                                 title = method, legend_gp = grid::gpar(fill = significance.color))
+  # represent p value
+  lgd2 <- ComplexHeatmap::Legend(pch = c("*","**","***","****"),
+                                 type = "points", labels = c("< 0.05","< 0.01","< 0.001","< 0.0001"),
+                                 title = "P Value")
+  # represent cluster
+  lgd3 <- ComplexHeatmap::Legend(labels = unique(sig.genesets.heatmap.cluster),
+                                 title = "Cluster",
+                                 legend_gp = grid::gpar(fill = cluster.color))
+  # represent direction
+  lgd4 <- ComplexHeatmap::Legend(labels = c("down","up"),
+                                 title = "Direction",
+                                 legend_gp = grid::gpar(fill = direction.color),
+                                 labels_gp = grid::gpar(fill = direction.color))
+  
+  lgd5 <- ComplexHeatmap::Legend(labels = c("6481A","6841A","5626A","9982A"),
+                                 title = "Sample",
+                                 legend_gp = grid::gpar(fill = sample.color),
+                                 labels_gp = grid::gpar(fill = sample.color))
+  
+    lgd6 <- ComplexHeatmap::Legend(labels = c("LumA","LumB"),
+                                 title = "Lum",
+                                 legend_gp = grid::gpar(fill = Lum.color),
+                                 labels_gp = grid::gpar(fill = Lum.color))
+  
+
+  # merge all legend
+  heatmap.legend <- ComplexHeatmap::packLegend(lgd1, lgd2, lgd3, lgd4, lgd5, lgd6,
+                                               direction = "vertical",
+                                               column_gap = grid::unit(1, "cm"))
+
+  # plot
+  heatmap.plot <- grid::grid.grabExpr(ComplexHeatmap::draw(heatmap.body,
+                                                           annotation_legend_list = heatmap.legend)) %>% ggplotify::as.ggplot()
+
+
+
+pdf(paste0(OUT_DIR, "combined_scRNA_hallmarks.pdf"), width = 46, height = 19.5)
+heatmap.plot
+dev.off()
+
+```
+
+
+
+
+```{r Hallmark_scRna_plt}
+x <- lbtr_list[[1]]
+x <- irGSEA.score(object = x, assay = "RNA", 
+                                  slot = "data", seeds = 123, ncores = 1,
+                                   min.cells = 3, min.feature = 1,
+                                   custom = F, geneset = NULL, msigdb = T, 
+                                   species = "Homo sapiens", category = "H",                                    
+                                  subcategory = NULL, geneid = "symbol",
+                                   method = c("AUCell", "UCell", "singscore", 
+                                              "ssgsea", "JASMINE", "viper"),
+                                   aucell.MaxRank = NULL, ucell.MaxRank = NULL, 
+                                   kcdf = 'Gaussian')
+
+DefaultAssay(x) <- "AUCell"
+FeaturePlot(x, features = c("HALLMARK-ESTROGEN-RESPONSE-EARLY","HALLMARK-CHOLESTEROL-HOMEOSTASIS","HALLMARK-INFLAMMATORY-RESPONSE"))+ DimPlot(x, group.by = "celltype_major")
+
+```
+
+
+
+```{r gene_plots}
+
+feature_list <- c("CCND1","MYC","CCNE2","ESR1","PGR","RB1","GATA3","PIK3CA","KAT6A","KAT6B","CDKN2A","CDKN2B" ,"TP53"
+                  )
+
+idx <- 1
+while (idx <= length(sample_list)){
+  sample <- lbtr_list[[idx]]
+  Idents(sample) <- "celltype_major"
+  plot1 <- FeaturePlot(sample, features = feature_list)
+  plot2 <- DimPlot(sample, group.by = "celltype_major")
+  plot <- plot1+plot2
+  ggsave(paste0(OUT_DIR,sample_list[idx],"_feature_plots.pdf"), plot,height = 20, width = 30)
+  #print(plot)
+  idx <- idx + 1
+}
+
+```
+
+
+```{r integrated_samples}
+
+features <- SelectIntegrationFeatures(object.list = lbtr_list, nfeatures = 3000)
+lbtr_list <- PrepSCTIntegration(object.list = lbtr_list, anchor.features = features)
+immune.anchors <- FindIntegrationAnchors(object.list = lbtr_list, normalization.method = "SCT",
+    anchor.features = features)
+immune.combined.sct <- IntegrateData(anchorset = immune.anchors, normalization.method = "SCT")
+immune.combined.sct <- RunPCA(immune.combined.sct, npcs = 30, verbose = FALSE)
+immune.combined.sct <- RunUMAP(immune.combined.sct, reduction = "pca", dims = 1:30)
+immune.combined.sct <- FindNeighbors(immune.combined.sct, reduction = "pca", dims = 1:30)
+immune.combined.sct <- FindClusters(immune.combined.sct, resolution = 0.5)
+```
+
+```{r}
+plot1 <- DimPlot(immune.combined.sct, group.by = "celltype_major")
+plot2 <- DimPlot(immune.combined.sct, group.by = "lumtype")
+plot3 <- DimPlot(immune.combined.sct, group.by = "seurat_clusters")
+plot4 <- DimPlot(immune.combined.sct, group.by = "sample")
+print((plot1+plot2)/(plot3+plot4))
+```
+
+
+```{r integrated_volcano}
+Idents(immune.combined.sct) <- 'celltype_major'
+
+comps <- c("Cancer Epithelial")
+
+umap_plots <- list()
+vol_plots_int <- list()
+markers <- list()
+
+for (i in seq_along(comps)) {
+  comp <- comps[[i]]
+  m <- FindMarkers(immune.combined.sct, ident.1 = "LumB", ident.2 = "LumA", group.by = 'lumtype', subset.ident=comp)
+  # p1 <- FeaturePlot(immune.combined, features = rownames(head(arrange(m, desc(avg_log2FC)), n=3)), split.by = "lumtype", max.cutoff = 3,
+  #                   cols = c("grey", "red"))
+  p2 <- volplot(m, paste0(paste0(comp," (LumB)"), " vs ", (paste0(comp," (LumA)"))))
+  markers[[i]] <- m
+  # umap_plots[[i]] <- p1
+  vol_plots_int[[i]] <- p2
+}
+```
+
+
+
+```{r cell_proportions}
+
+cell_type_counts <- immune.combined@meta.data %>%
+group_by(sample, celltype_major) %>%
+summarise(count = n())
+
+desired_order <- c("6481A", "6841A", "5626A", "9982A")
+
+ggplot(cell_type_counts, aes(fill=celltype_major, y=count, x = factor(sample, levels = desired_order))) + geom_bar(position="fill", stat="identity", width = 0.8 )+scale_fill_manual(values = brewer.pal(12, "Paired"))+coord_flip()+theme_classic() + labs(x = "Sample", y = "Proportion", fill = "Cell Type")
+
+ggsave(paste0(OUT_DIR, "cell_proportions.pdf"))
+
+
+cell_type_counts <- immune.combined@meta.data %>%
+group_by(lumtype, celltype_major) %>%
+summarise(count = n())
+
+
+ggplot(cell_type_counts, aes(fill=celltype_major, y=count, x = lumtype)) + geom_bar(position="fill", stat="identity", width = 0.8 )+scale_fill_manual(values = brewer.pal(12, "Paired"))+coord_flip()+theme_classic() + labs(x = "Lum Type", y = "Proportion", fill = "Cell Type")
+
+ggsave(paste0(OUT_DIR, "cell_proportions_Lum.pdf"))
+```
+
+
+
+```{r Visium_Data_Inport}
+VIS_DATA_DIR <- "I:/GMLSC1-Q2051/Pfizer/Visium/RAW_DATA/Pfizer/"
+
+import_visium <- function(sample){
+  data <- Load10X_Spatial(data.dir = paste0(VIS_DATA_DIR,sample, "/outs/"))
+  return(data)
+}
+
+vis_sample_list <- c("VLP78_A",  "VLP78_D",  "VLP79_A",  "VLP79_D",  "VLP80_A",  "VLP80_D",  "VLP81_A",  "VLP82_A",  "VLP82_D",  "VLP83_A",  "VLP83_D")
+
+
+##### ONLY RUN FOR "FOR_SEURAT" samples -> issue with barcodes
+#change_tissue_pos_files <- function(sample){
+#  data <- read.csv(paste0(VIS_DATA_DIR, sample, "/spatial/tissue_positions.csv"))
+#  data$in_tissue <- 1
+#  write_csv(data, paste0(VIS_DATA_DIR, sample, "/spatial/tissue_positions.csv"))
+#}
+
+#for (sample in vis_sample_list){
+#  change_tissue_pos_files(sample)
+#}
+
+
+vis_data <- list()
+
+for (sample in vis_sample_list){
+  data <- import_visium(sample)
+  vis_data <- c(vis_data, data)
+  
+}
+
+```
+
+
+```{r run_visium_qc}
+run_qc <- function(data, min_genes, min_spots, assay="Spatial") {
+    
+    dim(data@meta.data)
+    head(data@meta.data)
+    
+    # QC - removing Mitochondrial and Ribosomal Genes
+    print("QC - removing Mitochondrial and Ribosomal Genes...")
+    data <- PercentageFeatureSet(data, "^MT-", col.name = "percent_mito", assay=assay)
+    data <- PercentageFeatureSet(data, "^RP[SL]", col.name = "percent_ribo", assay=assay)
+
+    ## check the feature and count distribution before qc
+    feats <- c("nFeature_Spatial", "nCount_Spatial")
+        
+    # filtering 
+    selected_c <- WhichCells(data, expression = nFeature_Spatial > min_genes)
+    length(selected_c)
+    
+    selected_f <- rownames(data)[Matrix::rowSums(data) > min_spots]
+    length(selected_f)
+    
+    data <- subset(data, features = selected_f, cells = selected_c)
+    
+    #selected_c2=rownames(data@meta.data)[data$orig.ident!='']
+    #data <- subset(data,  cells = selected_c2)
+    #print("Keeping the filtered spots in Seurat object...")
+    
+    return(data)
+}
+
+vis_data_qc <- list()
+for (sample in vis_data){
+  data <- run_qc(sample, 10, 3)
+  vis_data_qc <-c(vis_data_qc, data)
+}
+
+```
+
+
+```{r vis_norm}
+
+get_clusters <- function(data, res = 0.5){
+  d <- SCTransform(data, assay = "Spatial", verbose = FALSE)
+  d <- RunPCA(d, assay = "SCT", verbose = FALSE)
+  d <- FindNeighbors(d, reduction = "pca", dims = 1:30)
+  d <- FindClusters(d, resolution = res,verbose = FALSE)
+  d <- RunUMAP(d, reduction = "pca", dims = 1:30)
+  return(d)
+}
+
+### Visium clusters with 0.5 res
+vis_clusters <-list()
+
+for(sample in vis_data_qc){
+  data <- get_clusters(sample)
+  vis_clusters <- c(vis_clusters,data)
+}
+
+
+### Visium clusters with 0.2 res
+vis_clusters_low_res <-list()
+
+for(sample in vis_data_qc){
+  data <- get_clusters(sample, res = 0.2)
+  vis_clusters_low_res <- c(vis_clusters_low_res,data)
+}
+
+```
+
+
+```{r plot_vis_clust}
+clust_5_dir <- paste0(OUT_DIR,"clusters_res_5/")
+dir.create(clust_5_dir)
+
+idx <- 1
+while(idx <= length(vis_clusters[])){
+  plot <- SpatialDimPlot(vis_clusters[[idx]])
+  #ggsave(paste0(clust_5_dir,vis_sample_list[[idx]],"cluster_res_5.pdf"), plot)
+  print(plot)
+  idx <- idx + 1
+  
+}
+
+```
+
+
+
+
+```{r plot_vis_clust}
+clust_2_dir <- paste0(OUT_DIR,"clusters_res_2/")
+dir.create(clust_2_dir)
+
+idx <- 1
+while (idx <= length(vis_clusters_low_res[])){
+  plot <- SpatialDimPlot(vis_clusters_low_res[[idx]])
+  ggsave(paste0(clust_2_dir,vis_sample_list[[idx]],"cluster_res_2.pdf"), plot)
+  print(plot)
+  idx <- idx + 1
+}
+
+```
+
+
+
+```{r matching_data}
+joint_datasets_list <- c("VLP78_A-1302A",  "VLP78_D-1346A",  "VLP79_A-1956A",  "VLP79_D-2116A",  "VLP80_A-3561A", 
+                         "VLP80_D-3633A",  "VLP81_A-4851A",  "VLP82_A-5626A",  "VLP82_D-6481A",  "VLP83_A-6841A",  "VLP83_D-9982A")
+
+                         
+get_matching_sc_idx <- function(sample){
+  split_strings  <- strsplit(joint_datasets_list, "-")
+  vis_idx <- which(sapply(split_strings, function(x) x[[1]]) == sample)
+  sc_name <- sapply(split_strings, function(x) x[[2]])[vis_idx]
+  sc_idx <- which(sample_list == sc_name)
+  return(sc_idx)
+}     
+                         
+```
+
+
+```{r label_transfer}
+
+##using matching scRNA data
+
+label_transfer <- function(sc_data, st_data){
+  anchors <- FindTransferAnchors(reference = sc_data, query = st_data, normalization.method = "SCT")
+  predictions.assay <- TransferData(anchorset = anchors, refdata = sc_data$celltype_major, prediction.assay = TRUE, weight.reduction = st_data[["pca"]], dims = 1:30 )
+  st_data[["predictions"]] <- predictions.assay
+  
+  predictions.assay@data
+  
+  max_list <- unlist(lapply(colnames(predictions.assay@data),function(col_name){names(which.max(predictions.assay@data[,col_name][-length(predictions.assay@data[,col_name])]))}))
+  
+  st_data$label_transfer <- max_list
+  
+  return(st_data)
+}
+
+#idx <-1 
+#while(idx <= length(vis_clusters[])){
+#  st_data <- vis_clusters[[idx]]
+#  sc_idx <- get_matching_sc_idx(vis_sample_list[idx])
+#  sc_data <- lbtr_list[[sc_idx]]
+#  data <- label_transfer(sc_data, st_data)
+#}
+
+
+V82_A <- label_transfer(subset_lbtr_list[[3]],vis_clusters_low_res[[8]])
+V82_D <- label_transfer(subset_lbtr_list[[1]],vis_clusters_low_res[[9]])
+V83_A <- label_transfer(subset_lbtr_list[[2]],vis_clusters_low_res[[10]])
+V83_D <- label_transfer(subset_lbtr_list[[4]],vis_clusters_low_res[[11]])
+
+
+
+V82_A_both <- label_transfer(subset_combo_list[[3]],vis_clusters_low_res[[8]])
+V82_D_both <- label_transfer(subset_combo_list[[1]],vis_clusters_low_res[[9]])
+V83_A_both <- label_transfer(subset_combo_list[[2]],vis_clusters_low_res[[10]])
+V83_D_both <- label_transfer(subset_combo_list[[4]],vis_clusters_low_res[[11]])
+
+
+
+
+##### For other samples without scData yet
+
+
+ref_data_lt <- function(st_data){
+  sc_data <- Ref_data_subset
+  
+  anchors <- FindTransferAnchors(reference = sc_data, query = st_data, normalization.method = "SCT", k.anchor = 250)
+  
+  #k_weight <- 50
+  
+  #if (dim(anchors@anchors)[1] < 100){
+  #  k_weight <- 25
+  #}
+  
+  predictions.assay <- TransferData(anchorset = anchors, refdata = sc_data$celltype_major, prediction.assay = TRUE, weight.reduction = st_data[["pca"]],dims = 1:30 #, k.weight = k_weight
+                                    )
+  st_data[["predictions"]] <- predictions.assay
+  
+  predictions.assay@data
+  
+  max_list <- unlist(lapply(colnames(predictions.assay@data),function(col_name){names(which.max(predictions.assay@data[,col_name][-length(predictions.assay@data[,col_name])]))}))
+  
+  st_data$label_transfer <- max_list
+  
+  return(st_data)
+}
+
+
+lb_vis_samples <- list()
+
+for (sample in vis_clusters_low_res[]){
+  new_data <- ref_data_lt(sample)
+  lb_vis_samples <- c(lb_vis_samples, new_data)
+}
+
+
+```
+
+
+```{r plot_label_transfer}
+
+plot_lt <- function(data, sample_name){
+  DefaultAssay(data) <- "predictions"
+  features <- rownames(data@assays$predictions@meta.features)
+  plot <- SpatialFeaturePlot(data, features = features, ncol = 4)
+  ggsave(paste0(OUT_DIR, sample_name,"_matched_sc_label_transfer.pdf"), plot, height = 15, width = 20)
+  print(plot)
+}
+
+plot_lt(V82_A, "V82_A")
+plot_lt(V82_D, "V82_D")
+plot_lt(V83_A, "V83_A")
+plot_lt(V83_D, "V83_D")
+
+
+cell_spots <- function(data, sample){
+  plot <- SpatialDimPlot(data, group.by = "label_transfer")
+  ggsave(paste0(OUT_DIR, sample,"_cell_labels.pdf"), plot)
+  print(plot)
+}
+
+cell_spots(V82_A, "V82_A")
+cell_spots(V82_D, "V82_D")
+cell_spots(V83_A, "V83_A")
+cell_spots(V83_D, "V83_D")
+
+
+
+idx <- 1
+
+while (idx <= length(vis_sample_list)){
+  plot_lt(lb_vis_samples[[idx]], paste0(vis_sample_list[[idx]], "_refData"))
+  cell_spots(lb_vis_samples[[idx]], paste0(vis_sample_list[[idx]], "_refData"))
+  idx <- idx + 1
+}
+
+
+
+
+```
+
+
+```{r cluster_proportions_celltypes}
+
+color_dict <- list(
+  "Cancer Epithelial"="#A6CEE3",
+  "Plasmablasts"= "#1F78B4",     
+  "B-cells" = "#B2DF8A",      
+  "T-cells" =  "#33A02C",     
+  "CAFs" = "#FB9A99",          
+  "Myeloid" =  "#E31A1C" ,        
+  "Endothelial"= "#FDBF6F",
+  "PVL"= "#FF7F00"                  
+  )
+
+
+
+celltype_proportion <- function(data, sample){
+  cell_type_counts <- data@meta.data %>%
+    group_by(seurat_clusters, label_transfer) %>%
+    summarise(count = n())
+  
+ cell_type_counts <- cell_type_counts %>%
+  mutate(color = unlist(color_dict[label_transfer]))
+ 
+ unique_labels <- unique(cell_type_counts$label_transfer)
+  
+ # Create a named vector of corresponding colors
+ legend_colors <- unlist(color_dict[unique_labels])
+
+ plot <- ggplot(cell_type_counts, aes(y = count, x = seurat_clusters, fill = label_transfer, color = label_transfer)) +
+    geom_bar(position = "fill", stat = "identity", width = 0.8) +
+    scale_fill_manual(values = unlist(color_dict)) +
+    scale_color_manual(values = unlist(color_dict)) +
+    coord_flip() + theme_classic() + labs(x = "Cluster", y = "Proportion")
+  
+  
+  ggsave(paste0(OUT_DIR,sample,"_celltype_proportions.pdf"))
+  print(plot)
+}
+
+celltype_proportion(V82_A, "V82_A")
+celltype_proportion(V82_D, "V82_D")
+celltype_proportion(V83_A, "V83_A")
+celltype_proportion(V83_D, "V83_D")
+
+
+
+```
+
+
+
+```{r find_cluster_markers}
+LumA <- vis_clusters_low_res[[9]]
+Idents(LumA) <- "seurat_clusters"
+
+###Find Up-Regulated Genes
+markers_pos <- FindAllMarkers(LumA, assay = "SCT", slot = "data", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+# filter to only significant hits
+markers_pos <- markers_pos %>% filter(p_val_adj <= 0.05)
+top5_pos <- markers_pos %>% group_by(cluster) %>% arrange(-avg_log2FC) %>% dplyr::slice(1:5)
+
+
+write.table(markers_pos, file = paste0(clust_2_dir, "V82_D_6481A_pos_markers.txt"), sep = "\t", quote = FALSE, col.names = NA)
+write.table(top5_pos, file = paste0(clust_2_dir, "V82_D_6481A_top5_markers.txt"), sep = "\t", quote = FALSE, col.names = NA)
+```
+
+
+```{r check_markers}
+feature_list <- c("CCND1","MYC","CCNE2","ESR1","PGR","RB1","GATA3","PIK3CA","KAT6A","KAT6B","CDKN2A","CDKN2B" ,"TP53")
+SpatialFeaturePlot(LumA, features = feature_list, ncol = 5)
+ggsave(paste0(OUT_DIR, "V82_D_6481A_feature_plots.pdf"), height = 15, width = 25)
+
+
+t_cell_genes <- c("TRAF3IP3","DGKA","GMFG","GPR65","GIMAP1","SIRPG","CD96","LY9","CD28","CD27","IL7R","CD3E","CD3D","CCR7","CD53","CD52","IL16","CD48","CD4","CD6","CD5","CD7","CD247",'CD69')
+
+SpatialFeaturePlot(LumA, features = t_cell_genes, ncol = 8)
+ggsave(paste0(OUT_DIR, "V82_D_6481A_t_cell_gene_plots.pdf"), height = 15, width = 25)
+
+b_cell_genes <-c("CD86","CD84","DENND5B","CD80","GMFG","GPR65","NCF4","CD180","CD1C","CD79B","CD79A","CD19","CD27","CD22")
+SpatialFeaturePlot(LumA, features = b_cell_genes, ncol = 6)
+ggsave(paste0(OUT_DIR, "V82_D_6481A_b_cell_gene_plots.pdf"), height = 15, width = 25)
+
+
+monocyte_gene_markers <-c("IFITM3","CD163","CEBPB","SERPINA1","FCER1G","CLEC10A","FGL2","MX1","AOAH","LYZ","AIF1","IFIT3","MPEG1","CXCL10","TYROBP","JAML","NFKBIZ","IRF7","LY6E")
+SpatialFeaturePlot(LumA, features = monocyte_gene_markers, ncol = 8)
+ggsave(paste0(OUT_DIR, "V82_D_6481A_monocyte_gene_plots.pdf"), height = 15, width = 25)
+```
+
+
+```{r visium_heatmap}
+DotPlot(LumA, features = unique(top10_pos$gene),cols = c("lightgrey", "blue"))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(paste0(OUT_DIR, "heatmap.pdf"), height = 15, width = 20)
+
+immune_markers <- c("CD3E", "CD4","CCR7","CD3D","CD79B","CD79A","CD22","CD19","LYZ","CCR2")
+DotPlot(LumA, features = immune_markers,cols = c("lightgrey", "blue"))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave(paste0(OUT_DIR, "immune_heatmap.pdf"))
+```
+
+
+
+```{r}
+
+feautre_dir <- paste0(OUT_DIR,"feature_plots/")
+dir.create(feautre_dir)
+
+idx <- 1
+while (idx <= length(vis_clusters_low_res[])){
+  plot <- SpatialFeaturePlot(vis_clusters_low_res[[idx]], features = feature_list, ncol = 5)
+  ggsave(paste0(feautre_dir,vis_sample_list[[idx]],"feature_plots.pdf"), plot)
+  print(plot)
+  idx <- idx + 1
+}
+
+```
+
+
+
+
+```{r EdgeR_function}
+
+run_pooling <- function(data.filt,n, condition, logFC_threshold=1.2, intercept=FALSE){    
+    cell_metadata <- data.filt@meta.data
+    samples=unique(cell_metadata$orig.ident)
+    print(samples)
+    print(paste0("Pooling one sample into ", n, " replicates..."))
+    nrg=n
+    for(i in c(1:length(samples))){
+      set.seed(i)
+      wo<-which(cell_metadata$orig.ident==samples[i])
+      cell_metadata[wo,'orig.ident2']<-paste(samples[i],sample(c(1:n),length(wo)
+                                                              ,replace=T,prob=rep(1/nrg,nrg)),sep='_')
+    }
+    gene_data <- row.names(data.filt)
+    filtered.sce <- SingleCellExperiment(assays = list(counts = data.filt@assays$SCT@counts),
+                                         colData = cell_metadata)
+    dim(filtered.sce)
+    
+    if ("_" %in% unique(filtered.sce@colData$orig.ident)){
+      tempf=strsplit(filtered.sce@colData$orig.ident,'_')
+    } else {
+      tempf = list(filtered.sce@colData$orig.ident)
+    }
+    
+    pid=NULL
+    for(i in 1:length(tempf)){
+      pidone=tempf[[i]]
+      if(length(pidone)!=3){
+        pidone=c(pidone[1],'yes',pidone[2])
+      }
+      pid=rbind(pid,pidone)
+    }
+    filtered.sce@colData$type=pid[,2]
+    is.mito<-grepl('mt-',row.names(filtered.sce))
+    is.ribo<-grepl('Rps|Rpl',row.names(filtered.sce))
+    qcstats <- perCellQCMetrics(filtered.sce, subsets=list(Mito=is.mito, Ribo=is.ribo))
+    keep_feature<-(!(is.mito)&!(is.ribo))
+    filtered.sce<-filtered.sce[keep_feature,]
+    summed <- aggregateAcrossCells(filtered.sce, 
+                                   id=colData(filtered.sce)[,'orig.ident2'])
+    assign("pooled_data", summed, envir=.GlobalEnv)
+
+    
+    
+    #pooled_data$condition <- condition
+    is_mito<-grepl('mt-',row.names(pooled_data))
+    is_ribo<-grepl('Rps|Rpl',row.names(pooled_data))
+    keep_gene <- !is_mito & !is_ribo
+    
+    
+    subset_names <- c("CAFs_1" ,"CAFs_2" ,"CAFs_3", "Cancer Epithelial_1", "Cancer Epithelial_2","Cancer Epithelial_3")
+    sub_set <-  counts(pooled_data)[,subset_names]
+    
+    
+    
+    y <- DGEList(sub_set, samples=subset_names,group=rev(condition)) 
+    y$samples$condition <- rev(condition)
+    keep <- filterByExpr(y, group=rev(condition), min.count = 2, min.total.count = 10)   
+    
+    y <- y[keep,]
+    y <- calcNormFactors(y)
+    if (intercept==TRUE){
+        design <- model.matrix(~intercept_category+condition)
+        design <- design[,-ncol(design)]
+    }
+    if(intercept==FALSE) {
+        design <- model.matrix(~condition)
+    }
+    y <- estimateDisp(y, design, robust=TRUE)
+    fit <- glmQLFit(y, design, robust=TRUE)
+    res <- glmTreat(fit, coef=ncol(fit$design), lfc=log2(logFC_threshold))
+    summary(decideTests(res))
+    res$table$regulate <- recode(as.character(decideTests(res)),"0"="Normal","1"="Up","-1"="Down")
+    de_group_edgeR <- res$table[order(res$table$PValue),]
+    table(decideTests(res))
+    res <- topTags(res,n = nrow(y))
+    res$table$regulate <- "Normal"
+    res$table$regulate[res$table$logFC>0 & res$table$FDR<0.05] <- "Up"
+    res$table$regulate[res$table$logFC<0 & res$table$FDR<0.05] <- "Down"
+    de_group_edgeR <- res$table[order(res$table$FDR),]
+    table(de_group_edgeR$regulate)
+
+    assign("edgeR_DEG_obj", list(y, de_group_edgeR), envir=.GlobalEnv)
+}
+
+```
+
+
+```{r runEdgeR}
+
+label_transfer_data <- list(V82_A, V82_D, V83_A, V83_D)
+edgeR_data_list <- list()
+
+run_edgeR <- function (sample){
+  sample$orig.ident <- sample$label_transfer
+  group <- c(rep("Cancer Epithelial",3), rep("CAFs",3))
+  edgeR_data <- run_pooling(sample,3, group, logFC_threshold=1.2, intercept=FALSE)
+  return(edgeR_data)
+}
+
+V82_A_edgR <- run_edgeR(V82_A)
+V82_D_edgR <- run_edgeR(V82_D)
+V83_A_edgR <- run_edgeR(V83_A)
+V83_D_edgR <- run_edgeR(V83_D)
+```
+
+
+```{r plot DEGs}
+
+generate_heatmap <- function(sample, data, sample_name){
+  sorted_data <- data[order(data$FDR), ]
+  # Extract top 20 Up regulated genes
+  top_up_genes <- rownames(subset(sorted_data, regulate == "Up")[1:20, ])
+
+  # Extract top 20 Down regulated genes
+  top_down_genes <- rownames(subset(sorted_data, regulate == "Down")[1:20, ])
+  
+  Idents(sample) <- "label_transfer"
+  sub_idents <- c("Cancer Epithelial","CAFs")
+  
+  DoHeatmap(subset(sample, idents = sub_idents,  downsample = 300), group.by = "label_transfer",features = c(top_up_genes,top_down_genes), size = 4,angle = 90)
+  #DoHeatmap(sample, group.by = "label_transfer",features = c(top_up_genes,top_down_genes), size = 4,angle = 90)
+  ggsave(paste0(OUT_DIR, sample_name,"_DEGs_heatmap.pdf"), height = 15, width = 20)
+}
+
+generate_heatmap(V82_A, V82_A_edgR[[2]], "V82_A")
+generate_heatmap(V82_D, V82_D_edgR[[2]], "V82_D")
+generate_heatmap(V83_A, V83_A_edgR[[2]], "V83_A")
+generate_heatmap(V83_D, V83_D_edgR[[2]], "V83_D")
+
+
+
+##### BASED ON DEGs run FEATURE PLOTS
+
+SpatialFeaturePlot(V82_A, features = c("GDAP1","KRT15","COL1A1","CD74"))
+ggsave(paste0(OUT_DIR, "V82_A_DEGs.pdf"))
+SpatialFeaturePlot(V82_D, features = c("SLPI","TFF3","IGFBP5","TRAC"))
+ggsave(paste0(OUT_DIR, "V82_D_DEGs.pdf"))
+SpatialFeaturePlot(V83_A, features = c("AZGP1","CYP4F8","MGP","FN1"))
+ggsave(paste0(OUT_DIR, "V83_A_DEGs.pdf"))
+SpatialFeaturePlot(V83_D, features = c("TEX14","CRABP2","MUC1","COL3A1"))
+ggsave(paste0(OUT_DIR, "V83_D_DEGs.pdf"))
+
+
+
+```
+
+
+```{r export_label_transfer}
+
+export_labeltransfer <- function(data, sample){
+  
+  df <- as.data.frame(data$label_transfer)
+  df$barcodes <- rownames(df)
+                      
+  write_csv(df, paste(OUT_DIR, sample,"_label_transfer.csv"))
+}
+
+export_labeltransfer(V82_A, "V82_A")
+export_labeltransfer(V82_D, "V82_D")
+export_labeltransfer(V83_A, "V83_A")
+export_labeltransfer(V83_D, "V83_D")
+```
+
+
+```{r cell_community_analysis}
+
+DE_dir <- paste0(OUT_DIR,"DE/")
+dir.create(DE_dir)
+
+
+run_DE_allcells <- function(data, sample){
+  Idents(data) <- "label_transfer"
+  
+  markers <- FindAllMarkers(data, assay = "SCT", slot = "data", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+  # filter to only significant hits
+  markers <- markers %>% filter(p_val_adj <= 0.05)
+  top10 <- markers %>% group_by(cluster) %>% arrange(-avg_log2FC) %>% dplyr::slice(1:10)
+
+  write.table(markers_pos, file = paste0(DE_dir, sample,"_pos_markers.txt"), sep = "\t", quote = FALSE, col.names = NA)
+  write.table(top5_pos, file = paste0(DE_dir, sample,"_top10_markers.txt"), sep = "\t", quote = FALSE, col.names = NA)
+}
+
+run_DE_allcells(V82_A, "V82_A")
+run_DE_allcells(V82_D, "V82_D")
+run_DE_allcells(V83_A, "V83_A")
+run_DE_allcells(V83_D, "V83_D")
+
+
+
+V82_A_DE <- read.table(paste0(DE_dir,"V82_A","_pos_markers.txt"))
+V82_D_DE <- read.table(paste0(DE_dir,"V82_D","_pos_markers.txt"))
+V83_A_DE <- read.table(paste0(DE_dir,"V83_A","_pos_markers.txt"))
+V83_D_DE <- read.table(paste0(DE_dir,"V83_D","_pos_markers.txt"))
+
+
+DE_list <-list(V82_A_DE,V82_D_DE,V83_A_DE,V83_D_DE)
+
+
+top10 <- list()
+
+for (i in DE_list[]){
+  top10_data <- i %>% group_by(cluster) %>% arrange(-avg_log2FC) %>% dplyr::slice(1:10)
+  top10 <- c(top10, top10_data)
+}
+
+
+plot_heatmap <- function(data, DE, sample){
+  DoHeatmap(data, group.by = "label_transfer",features = rownames(DE), size = 4,angle = 90)
+  #DoHeatmap(subset(sample, idents = sub_idents,  downsample = 300), group.by = "label_transfer",features = c(top_up_genes,top_down_genes), size = 4,angle = 90)
+}
+
+label_transfer_samples <- c("V82_A", "V82_D", "V83_A", "V83_D")
+
+
+idx <- 1
+while (idx <= length(top10)){
+  plot_heatmap(label_transfer_data[[idx]], top10[[idx]],label_transfer_samples[[idx]])
+  idx <- idx + 1
+}
+
+
+```
+
+
+```{r wu_et_al}
+
+lum_markers <- read.csv("I:/GML001-Q1851/Andrew_C/Pfizer/Wu_et_al_lum_marker_genes.csv")
+celltype_markers <- read.csv("I:/GML001-Q1851/Andrew_C/Pfizer/Wu_et_al_celltype_marker_genes.csv")
+gene.sets <- list(LumA_SC = c(subset(celltype_markers$major.lineage, ident = "Cancer Epithelial")$),
+                  LumB_b = c(lum_markers$LumB_SC))
+
+ES.seurat <- enrichIt(obj = data_list[[1]], 
+                      gene.sets = gene.sets, 
+                      method = "UCell",
+                      groups = 1000, cores = 2, 
+                      min.size = 5)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
