@@ -20,44 +20,64 @@ library(Cardinal)
 
 ```
 
+## Read data
 
 ```{r Read_data}
-DATA_DIR <- "I:/GML001-Q1851/Tuan/MALDI_1/07_25_MALDI_imzml/"
-treatment_1_1 <- readMSIData(paste0(DATA_DIR,"1-1-visium-dhb-treated.imzML"),mass.range = c(160,3000),resolution = 300, attach.only = TRUE)
-control_1_1 <- readMSIData(paste0(DATA_DIR,"1-1-visium-dhb-control.imzML"),mass.range = c(160,3000), resolution = 300, attach.only = TRUE)
-treatment_1_2 <- readMSIData(paste0(DATA_DIR,"2-1-visium-dhb-treated.imzML"),mass.range = c(160,3000), resolution = 260, attach.only = TRUE)
-control_1_2 <- readMSIData(paste0(DATA_DIR,"2-1-visium-dhb-control.imzML"),mass.range = c(160,3000), resolution = 260, attach.only = TRUE)
-
+DATA_DIR <- "I:/CMM1636-Q5291/VLP94_MALDI/2023.09.11 imzML file/"
+treatment_1 <- readMSIData(paste0(DATA_DIR,"vlp94c-treated-dhb.imzML"),mass.range = c(160,3000),resolution = 300, attach.only = TRUE)
+control_1 <- readMSIData(paste0(DATA_DIR,"vlp94a-control-dhb.imzML"),mass.range = c(160,3000), resolution = 300, attach.only = TRUE)
+treatment_2 <- readMSIData(paste0(DATA_DIR,"vlp94d-treated-dhb.imzML"),mass.range = c(160,3000), resolution = 260, attach.only = TRUE)
+control_2 <- readMSIData(paste0(DATA_DIR,"vlp94b-control-dhb.imzML"),mass.range = c(160,3000), resolution = 260, attach.only = TRUE)
+```
 
 ### Combine samples into treatment and control for run 1 and 2
+```{r combine_runs}
 set_centroid_to_true <- function(data){
   centroided(data) <- TRUE
   return(data)
 }
 
-treatment_1_1 <- set_centroid_to_true(treatment_1_1)
-control_1_1 <- set_centroid_to_true(control_1_1)
+treatment_1 <- set_centroid_to_true(treatment_1)
+control_1 <- set_centroid_to_true(control_1)
 
-treatment_1_add <- treatment_1_1
+### shift the coords of the treated sample so it doesnt overlap with the control sample image
+treatment_1_add <- treatment_1
 treatment_1_add_pixel_data <- pixelData(treatment_1_add)
 treatment_1_add_pixel_data@coord$x <- treatment_1_add_pixel_data@coord$x + 200
 pixelData(treatment_1_add) <- treatment_1_add_pixel_data 
 
-treatment_1_2 <- set_centroid_to_true(treatment_1_2)
-control_1_2 <- set_centroid_to_true(control_1_2)
+treatment_2 <- set_centroid_to_true(treatment_2)
+control_2 <- set_centroid_to_true(control_2)
 
-
-treatment_2_add <- treatment_1_2
+### shift the coords of the treated sample so it doesnt overlap with the control sample image
+treatment_2_add <- treatment_2
 treatment_2_add_pixel_data <- pixelData(treatment_2_add)
 treatment_2_add_pixel_data@coord$x <- treatment_2_add_pixel_data@coord$x + 200
 pixelData(treatment_2_add) <- treatment_2_add_pixel_data 
 
 
-run1_new <- Cardinal::combine(treatment_1_add, control_1_1)
-run2_new <-  Cardinal::combine(treatment_2_add, control_1_2)
+###### Combine match runs
+run1 <- Cardinal::combine(treatment_1_add, control_1)
+run2 <-  Cardinal::combine(treatment_2_add, control_2)
 
 ```
 
+
+
+## Plot Drug Data
+```{r drug_data}
+
+### Drug1
+image(run1, mz=448.245, plusminus=0.01) #no features in range; re-centering m/z 448.245 to 448.260180086314
+image(run1, mz=450.259, plusminus=0.01) #no features in range; re-centering m/z 450.259 to 450.281896361841
+
+### Drug2
+image(run2, mz=448.245, plusminus=0.01) #no features in range; re-centering m/z 448.245 to 448.224319843837
+image(run2, mz=450.259, plusminus=0.01) #no features in range; re-centering m/z 450.259 to 450.209856151453
+```
+
+
+## Normalise data
 
 ```{r plot_data}
 
@@ -70,27 +90,6 @@ mse_normlisation <- function(data){
 
 run1_pre <- mse_normlisation(run1)
 run2_pre <- mse_normlisation(run2)
-
-#treatment_1_1 <- mse_normlisation(treatment_1_1)
-#control_1_1 <- mse_normlisation(control_1_1)
-#treatment_1_2 <- mse_normlisation(treatment_1_2)
-#control_1_2 <- mse_normlisation(control_1_2)
-
-
-mse_smooth <- function(data){
-  new_data <- smoothSignal(data, method="gaussian")
-  return(new_data)
-}
-
-run1_pre <- mse_smooth(run1_pre)
-run2_pre <- mse_smooth(run2_pre)
-#treatment_1_1 <- mse_smooth(treatment_1_1)
-#control_1_1 <- mse_smooth(control_1_1)
-#treatment_1_2 <- mse_smooth(treatment_1_2)
-#control_1_2 <- mse_smooth(control_1_2)
-
-
-
 
 
 mse_process <- function(data){
