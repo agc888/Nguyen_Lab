@@ -1,0 +1,220 @@
+---
+title: "Metabolics"
+output: html_document
+date: "2023-08-31"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r include=FALSE}
+
+#removes all data from global environment
+rm(list = ls())
+```
+
+```{r librarys}
+library(Cardinal)
+
+```
+
+
+```{r Read_data}
+DATA_DIR <- "I:/GML001-Q1851/Tuan/MALDI_1/07_25_MALDI_imzml/"
+treatment_1_1 <- readMSIData(paste0(DATA_DIR,"1-1-visium-dhb-treated.imzML"),mass.range = c(160,3000),resolution = 300, attach.only = TRUE)
+control_1_1 <- readMSIData(paste0(DATA_DIR,"1-1-visium-dhb-control.imzML"),mass.range = c(160,3000), resolution = 300, attach.only = TRUE)
+treatment_1_2 <- readMSIData(paste0(DATA_DIR,"2-1-visium-dhb-treated.imzML"),mass.range = c(160,3000), resolution = 260, attach.only = TRUE)
+control_1_2 <- readMSIData(paste0(DATA_DIR,"2-1-visium-dhb-control.imzML"),mass.range = c(160,3000), resolution = 260, attach.only = TRUE)
+
+
+### Combine samples into treatment and control for run 1 and 2
+set_centroid_to_true <- function(data){
+  centroided(data) <- TRUE
+  return(data)
+}
+
+treatment_1_1 <- set_centroid_to_true(treatment_1_1)
+control_1_1 <- set_centroid_to_true(control_1_1)
+
+treatment_1_add <- treatment_1_1
+treatment_1_add_pixel_data <- pixelData(treatment_1_add)
+treatment_1_add_pixel_data@coord$x <- treatment_1_add_pixel_data@coord$x + 200
+pixelData(treatment_1_add) <- treatment_1_add_pixel_data 
+
+treatment_1_2 <- set_centroid_to_true(treatment_1_2)
+control_1_2 <- set_centroid_to_true(control_1_2)
+
+
+treatment_2_add <- treatment_1_2
+treatment_2_add_pixel_data <- pixelData(treatment_2_add)
+treatment_2_add_pixel_data@coord$x <- treatment_2_add_pixel_data@coord$x + 200
+pixelData(treatment_2_add) <- treatment_2_add_pixel_data 
+
+
+run1_new <- Cardinal::combine(treatment_1_add, control_1_1)
+run2_new <-  Cardinal::combine(treatment_2_add, control_1_2)
+
+```
+
+
+```{r plot_data}
+
+mse_normlisation <- function(data){
+  new_data <- normalize(data, method="rms")
+  
+  return(new_data)
+}
+
+
+run1_pre <- mse_normlisation(run1)
+run2_pre <- mse_normlisation(run2)
+
+#treatment_1_1 <- mse_normlisation(treatment_1_1)
+#control_1_1 <- mse_normlisation(control_1_1)
+#treatment_1_2 <- mse_normlisation(treatment_1_2)
+#control_1_2 <- mse_normlisation(control_1_2)
+
+
+mse_smooth <- function(data){
+  new_data <- smoothSignal(data, method="gaussian")
+  return(new_data)
+}
+
+run1_pre <- mse_smooth(run1_pre)
+run2_pre <- mse_smooth(run2_pre)
+#treatment_1_1 <- mse_smooth(treatment_1_1)
+#control_1_1 <- mse_smooth(control_1_1)
+#treatment_1_2 <- mse_smooth(treatment_1_2)
+#control_1_2 <- mse_smooth(control_1_2)
+
+
+
+
+
+mse_process <- function(data){
+  new_data <- process(data)
+  return(new_data)
+}
+
+run1_pre <- mse_process(run1_pre)
+run2_pre <- mse_process(run2_pre)
+#treatment_1_1 <- mse_process(treatment_1_1)
+#control_1_1 <- mse_process(control_1_1)
+#treatment_1_2 <- mse_process(treatment_1_2)
+#control_1_2 <- mse_process(control_1_2)
+
+
+```
+
+
+
+```{r plots}
+wd <- "I:/GML001-Q1851/Andrew_C/Metabolomics/"
+
+important_metabolomics <- read.csv(paste0(wd, "Important_metabolites.csv"))
+FMP10_detected <- read.csv(paste0(wd, "FMP10_detected.csv"))
+DHB_detected <- read.csv(paste0(wd, "DHB_detected.csv"))
+
+
+
+plot_metabolite <- function(met_dir, run_sub, pdf_name, run_name, metabolite, mz){
+  
+  
+  if (run_sub == "run1_pre"){
+    if (run_name == "1-1-visium-dhb-control"){
+      plot <- Cardinal::image(run1_pre, mz = mz, subset= run(run1_pre) == "1-1-visium-dhb-control")
+    } else{
+       plot <- Cardinal::image(run1_pre, mz = mz, subset= run(run1_pre) == "1-1-visium-dhb-treated")
+    }
+  } else{
+     if (run_name == "2-1-visium-dhb-control"){
+       plot <- Cardinal::image(run2_pre, mz = mz, subset= run(run2_pre) == "2-1-visium-dhb-control")
+    } else{
+       plot <- Cardinal::image(run2_pre, mz = mz, subset= run(run2_pre) == "2-1-visium-dhb-treated")
+    }
+  }
+  
+  plot_name <- paste0(met_dir,metabolite,pdf_name, ".jpeg")
+  jpeg(plot_name)
+  plot
+  dev.off()
+  
+}
+
+
+already_mapped <- c()
+#important_metabolites
+idx <- 1
+while(idx <= length(important_metabolomics$Compound.name)){
+  if (important_metabolomics$Monoisotopic.neutral.mass[idx] > 160){
+    metabolite_name <- important_metabolomics$Compound.name[idx]
+    if (metabolite_name %in% already_mapped){
+      metabolite_name <- paste0(metabolite_name,".1")
+    }
+    
+    met_dir <- paste0(wd,metabolite_name, "/")
+    dir.create(met_dir)
+    
+    #control_1
+    plot_metabolite(met_dir = met_dir, run_sub = "run1_pre", 
+                    pdf_name = "_control_1", run_name = "1-1-visium-dhb-control", 
+                    metabolite = metabolite_name, mz = important_metabolomics$Monoisotopic.neutral.mass[idx])
+    
+    #treatment_1
+    plot_metabolite(met_dir = met_dir,run_sub = "run1_pre", 
+                    pdf_name = "_treatment_1", run_name = "1-1-visium-dhb-treated", 
+                    metabolite = metabolite_name, mz = important_metabolomics$Monoisotopic.neutral.mass[idx])
+  
+    #control_2
+    plot_metabolite(met_dir = met_dir,run_sub = "run2_pre", 
+                    pdf_name = "_control_2", run_name = "2-1-visium-dhb-control", 
+                    metabolite = metabolite_name, mz = important_metabolomics$Monoisotopic.neutral.mass[idx])
+  
+    #treatment_2
+    plot_metabolite(met_dir = met_dir,run_sub = "run2_pre", 
+                    pdf_name = "_treatment_2", run_name = "2-1-visium-dhb-treated", 
+                    metabolite = metabolite_name, mz = important_metabolomics$Monoisotopic.neutral.mass[idx])
+    
+   
+    already_mapped <- c(already_mapped,metabolite_name)
+  }
+  idx <- idx+1
+}
+
+
+
+
+```
+
+
+
+
+
+
+
+```{r}
+treatment_1_1 %>% subsetPixels(x==100, y==100, run=="1-1-visium-dhb-treated") %>%
+    process() %>%
+    peakPick(method="mad") %>%
+    process(plot=TRUE, par=list(main="MAD noise", layout=c(3,1)))
+
+treatment_1_1 %>% subsetPixels(x==100, y==100, run=="1-1-visium-dhb-treated") %>%
+    process() %>%
+    peakPick(method="simple") %>%
+    process(plot=TRUE,
+            par=list(main="Simple SD noise"))
+
+treatment_1_1 %>% subsetPixels(x==100, y==100, run=="1-1-visium-dhb-treated") %>%
+    process() %>%
+    peakPick(method="adaptive") %>%
+    process(plot=TRUE, par=list(main="Adaptive SD noise"))
+```
+
+
+
+
+
+
+
