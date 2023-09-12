@@ -17,6 +17,7 @@ rm(list = ls())
 
 ```{r librarys}
 library(Cardinal)
+library(magick)
 
 ```
 
@@ -24,11 +25,15 @@ library(Cardinal)
 
 ```{r Read_data}
 DATA_DIR <- "I:/CMM1636-Q5291/VLP94_MALDI/2023.09.11 imzML file/"
+OUT_DIR <- "I:/GML001-Q1851/Andrew_C/Metabolomics/"
+
 treatment_1 <- readMSIData(paste0(DATA_DIR,"vlp94c-treated-dhb.imzML"),mass.range = c(160,3000),resolution = 300, attach.only = TRUE)
 control_1 <- readMSIData(paste0(DATA_DIR,"vlp94a-control-dhb.imzML"),mass.range = c(160,3000), resolution = 300, attach.only = TRUE)
 treatment_2 <- readMSIData(paste0(DATA_DIR,"vlp94d-treated-dhb.imzML"),mass.range = c(160,3000), resolution = 260, attach.only = TRUE)
 control_2 <- readMSIData(paste0(DATA_DIR,"vlp94b-control-dhb.imzML"),mass.range = c(160,3000), resolution = 260, attach.only = TRUE)
 ```
+
+
 
 ### Combine samples into treatment and control for run 1 and 2
 ```{r combine_runs}
@@ -63,7 +68,6 @@ run2 <-  Cardinal::combine(treatment_2_add, control_2)
 ```
 
 
-
 ## Plot Drug Data
 ```{r drug_data}
 
@@ -78,8 +82,7 @@ image(run2, mz=450.259, plusminus=0.01) #no features in range; re-centering m/z 
 
 
 ## Normalise data
-
-```{r plot_data}
+```{r normalise_data}
 
 mse_normlisation <- function(data){
   new_data <- normalize(data, method="rms")
@@ -99,22 +102,32 @@ mse_process <- function(data){
 
 run1_pre <- mse_process(run1_pre)
 run2_pre <- mse_process(run2_pre)
-#treatment_1_1 <- mse_process(treatment_1_1)
-#control_1_1 <- mse_process(control_1_1)
-#treatment_1_2 <- mse_process(treatment_1_2)
-#control_1_2 <- mse_process(control_1_2)
+
+saveRDS(run1_pre, "I:/GML001-Q1851/Andrew_C/Metabolomics/normalised_run1_pre.RDS")
+saveRDS(run2_pre, "I:/GML001-Q1851/Andrew_C/Metabolomics/normalised_run2_pre.RDS")
+```
 
 
+## Plot Normalised Drug Data
+```{r normalised_drug_data}
+
+### Drug1
+image(run1_pre, mz=448.245, plusminus=0.01) #no features in range; re-centering m/z 448.245 to 448.260180086314
+image(run1_pre, mz=450.259, plusminus=0.01) #no features in range; re-centering m/z 450.259 to 450.281896361841
+
+### Drug2
+image(run2_pre, mz=448.245, plusminus=0.01) #no features in range; re-centering m/z 448.245 to 448.224319843837
+image(run2_pre, mz=450.259, plusminus=0.01) #no features in range; re-centering m/z 450.259 to 450.209856151453
 ```
 
 
 
-```{r plots}
-wd <- "I:/GML001-Q1851/Andrew_C/Metabolomics/"
+## Plot important metabolites
+```{r plot_metabolites}
 
-important_metabolomics <- read.csv(paste0(wd, "Important_metabolites.csv"))
-FMP10_detected <- read.csv(paste0(wd, "FMP10_detected.csv"))
-DHB_detected <- read.csv(paste0(wd, "DHB_detected.csv"))
+important_metabolomics <- read.csv(paste0(OUT_DIR, "Important_metabolites.csv"))
+FMP10_detected <- read.csv(paste0(OUT_DIR, "FMP10_detected.csv"))
+DHB_detected <- read.csv(paste0(OUT_DIR, "DHB_detected.csv"))
 
 
 
