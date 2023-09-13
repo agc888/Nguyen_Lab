@@ -8,8 +8,7 @@ date: "2023-08-31"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
-```{r include=FALSE}
+```{r remove_data, include=FALSE}
 
 #removes all data from global environment
 rm(list = ls())
@@ -17,7 +16,7 @@ rm(list = ls())
 
 ```{r librarys}
 library(Cardinal)
-library(magick)
+library(cowplot)
 
 ```
 
@@ -112,11 +111,11 @@ saveRDS(run2_pre, "I:/GML001-Q1851/Andrew_C/Metabolomics/normalised_run2_pre.RDS
 ```{r normalised_drug_data}
 
 ### Drug1
-image(run1_pre, mz=448.245, plusminus=0.01) #no features in range; re-centering m/z 448.245 to 448.260180086314
-image(run1_pre, mz=450.259, plusminus=0.01) #no features in range; re-centering m/z 450.259 to 450.281896361841
+image(run1_pre, mz=448.245, plusminus=0.01, contrast.enhance="suppress", normalize.image="linear") #no features in range; re-centering m/z 448.245 to 448.260180086314
+image(run1_pre, mz=450.259, plusminus=0.01, contrast.enhance="suppress", normalize.image="linear") #no features in range; re-centering m/z 450.259 to 450.281896361841
 
 ### Drug2
-image(run2_pre, mz=448.245, plusminus=0.01) #no features in range; re-centering m/z 448.245 to 448.224319843837
+image(run2_pre, mz=448.245, plusminus=0.01 ) #no features in range; re-centering m/z 448.245 to 448.224319843837
 image(run2_pre, mz=450.259, plusminus=0.01) #no features in range; re-centering m/z 450.259 to 450.209856151453
 ```
 
@@ -130,101 +129,235 @@ FMP10_detected <- read.csv(paste0(OUT_DIR, "FMP10_detected.csv"))
 DHB_detected <- read.csv(paste0(OUT_DIR, "DHB_detected.csv"))
 
 
+####Weird name -> rename #### 
+important_metabolomics$`ï..Compound.name`[17] <- "ketoglutarate"
+#############################
 
-plot_metabolite <- function(met_dir, run_sub, pdf_name, run_name, metabolite, mz){
-  
-  
-  if (run_sub == "run1_pre"){
-    if (run_name == "1-1-visium-dhb-control"){
-      plot <- Cardinal::image(run1_pre, mz = mz, subset= run(run1_pre) == "1-1-visium-dhb-control")
-    } else{
-       plot <- Cardinal::image(run1_pre, mz = mz, subset= run(run1_pre) == "1-1-visium-dhb-treated")
-    }
+### Remove_duplicates ###
+rename_list <- c()
+for (met in important_metabolomics$`ï..Compound.name`){
+  if (met %in% rename_list){
+    rename_list <- c(rename_list,paste0(met,".1"))
   } else{
-     if (run_name == "2-1-visium-dhb-control"){
-       plot <- Cardinal::image(run2_pre, mz = mz, subset= run(run2_pre) == "2-1-visium-dhb-control")
-    } else{
-       plot <- Cardinal::image(run2_pre, mz = mz, subset= run(run2_pre) == "2-1-visium-dhb-treated")
+    rename_list <- c(rename_list,met)
+  }
+}
+
+important_metabolomics$`ï..Compound.name` <- rename_list
+
+
+######################################################
+
+plot_metabolites <- function(data, data_list, run_name){
+  
+  image_list <- list()
+  for (index in rownames(data_list)){
+    index <- as.integer(index)
+    
+    mz <-  data_list$Monoisotopic.neutral.mass[index] 
+    if(as.integer(mz) > 161){
+      metabolite_name <- data_list$`ï..Compound.name`[index]
+      plot <- image(data, mz = mz, plusminus=0.01,contrast.enhance="suppress", normalize.image="linear", xlab = paste0(run_name,": ",metabolite_name))
+      image_list[[metabolite_name]] <- plot
     }
   }
-  
-  plot_name <- paste0(met_dir,metabolite,pdf_name, ".jpeg")
-  jpeg(plot_name)
-  plot
-  dev.off()
-  
+  return(image_list)
 }
 
 
-already_mapped <- c()
-#important_metabolites
-idx <- 1
-while(idx <= length(important_metabolomics$Compound.name)){
-  if (important_metabolomics$Monoisotopic.neutral.mass[idx] > 160){
-    metabolite_name <- important_metabolomics$Compound.name[idx]
-    if (metabolite_name %in% already_mapped){
-      metabolite_name <- paste0(metabolite_name,".1")
-    }
-    
-    met_dir <- paste0(wd,metabolite_name, "/")
-    dir.create(met_dir)
-    
-    #control_1
-    plot_metabolite(met_dir = met_dir, run_sub = "run1_pre", 
-                    pdf_name = "_control_1", run_name = "1-1-visium-dhb-control", 
-                    metabolite = metabolite_name, mz = important_metabolomics$Monoisotopic.neutral.mass[idx])
-    
-    #treatment_1
-    plot_metabolite(met_dir = met_dir,run_sub = "run1_pre", 
-                    pdf_name = "_treatment_1", run_name = "1-1-visium-dhb-treated", 
-                    metabolite = metabolite_name, mz = important_metabolomics$Monoisotopic.neutral.mass[idx])
-  
-    #control_2
-    plot_metabolite(met_dir = met_dir,run_sub = "run2_pre", 
-                    pdf_name = "_control_2", run_name = "2-1-visium-dhb-control", 
-                    metabolite = metabolite_name, mz = important_metabolomics$Monoisotopic.neutral.mass[idx])
-  
-    #treatment_2
-    plot_metabolite(met_dir = met_dir,run_sub = "run2_pre", 
-                    pdf_name = "_treatment_2", run_name = "2-1-visium-dhb-treated", 
-                    metabolite = metabolite_name, mz = important_metabolomics$Monoisotopic.neutral.mass[idx])
-    
-   
-    already_mapped <- c(already_mapped,metabolite_name)
-  }
-  idx <- idx+1
-}
+run1_plots_important_metabolomics  <- plot_metabolites(run1_pre, important_metabolomics, "Run 1")
+run2_plots_important_metabolomics <- plot_metabolites(run2_pre,important_metabolomics, "Run 1")
 
 
+######################################################
+
+
+```
+
+## Run1 Important Metabolites Plots
+```{r show_plots_run1}
+run1_plots_important_metabolomics
+```
+
+## Run2 Important Metabolites Plots
+```{r show_plots_run2}
+run2_plots_important_metabolomics
+```
+
+
+## Data summary
+```{r data_summary}
+
+run1_summary <- summarizeFeatures(run1, "mean")
+plot(run1_summary)
+
+run1_summary_tic <- summarizePixels(run1, c(tic="sum"))
+image(run1_summary_tic)
+
+```
+
+
+## Run Peak Binning
+```{r peak_binning}
+run1_summary_ref <- run1_summary %>%
+  peakPick(SNR=3) %>%
+  peakAlign(ref="mean",
+            tolerance=0.5,
+            units="mz") %>%
+  peakFilter() %>%
+  process()
+
+run1_test <- run1 %>%
+  normalize(method="rms") %>%
+  peakBin(ref=mz(run1_summary_ref),
+          tolerance=0.5,
+          units="mz") %>%
+  process()
+
+```
+
+
+## PCA analysis
+```{r PCA_analysis}
+run1_pca <- PCA(run1_test, ncomp=3)
+image(run1_pca, contrast.enhance="histogram", normalize.image="linear")
+
+plot(run1_pca, lwd=2)
+
+```
+
+
+## Segmentation of image
+```{r image_segmentation}
+
+set.seed(1)
+run1_ssc <- spatialShrunkenCentroids(run1_test, method="adaptive",
+                                       r=2, s=c(0,5,10,15,20,25), k=10)
+
+summary(run1_ssc)
+```
+
+
+## Plot Image Segmentation
+```{r plot_image_segmentation}
+
+### CHECK WHICH S value to use -> lower = more peaks used to cluster (chose s = 15)
+#image(run1_ssc, model=list(s=c(10,15,20,25)))
+#plot(run1_ssc, model=list(s=20), lwd=2)
+
+cols <- discrete.colors(6)
+setup.layout(c(5,1))
+plot(run1_ssc, model=list(s=15), column=1, col=cols[1], lwd=2, layout=NULL)
+plot(run1_ssc, model=list(s=15), column=2, col=cols[2], lwd=2, layout=NULL)
+plot(run1_ssc, model=list(s=15), column=3, col=cols[3], lwd=2, layout=NULL)
+plot(run1_ssc, model=list(s=15), column=4, col=cols[4], lwd=2, layout=NULL)
+
+
+setup.layout(c(2,2))
+image(run1_ssc, model=list(s=15), column=1, col=cols[1], lwd=2, layout = NULL)
+image(run1_ssc, model=list(s=15), column=2, col=cols[2], lwd=2, layout = NULL)
+image(run1_ssc, model=list(s=15), column=3, col=cols[3], lwd=2, layout = NULL)
+image(run1_ssc, model=list(s=15), column=4, col=cols[4], lwd=2, layout = NULL)
 
 
 ```
 
 
+## Plot Segmentation Statistics
+```{r segmentation_stats}
+
+setup.layout(c(3,3))
+plot(run1_ssc, model=list(s=0), values="statistic",column=1, col=cols[1], lwd=2, layout=NULL)
+plot(run1_ssc, model=list(s=0), values="statistic",column=2, col=cols[2], lwd=2, layout=NULL)
+plot(run1_ssc, model=list(s=0), values="statistic",column=3, col=cols[3], lwd=2, layout=NULL)
+plot(run1_ssc, model=list(s=0), values="statistic",column=4, col=cols[4], lwd=2, layout=NULL)
+
+plot(run1_ssc, model=list(s=0), values="statistic",column=5, col=cols[5], lwd=2, layout=NULL)
+plot(run1_ssc, model=list(s=0), values="statistic",column=6, col=cols[6], lwd=2, layout=NULL)
+plot(run1_ssc, model=list(s=0), values="statistic",column=7, col=cols[7], lwd=2, layout=NULL)
 
 
-
-
-
-```{r}
-treatment_1_1 %>% subsetPixels(x==100, y==100, run=="1-1-visium-dhb-treated") %>%
-    process() %>%
-    peakPick(method="mad") %>%
-    process(plot=TRUE, par=list(main="MAD noise", layout=c(3,1)))
-
-treatment_1_1 %>% subsetPixels(x==100, y==100, run=="1-1-visium-dhb-treated") %>%
-    process() %>%
-    peakPick(method="simple") %>%
-    process(plot=TRUE,
-            par=list(main="Simple SD noise"))
-
-treatment_1_1 %>% subsetPixels(x==100, y==100, run=="1-1-visium-dhb-treated") %>%
-    process() %>%
-    peakPick(method="adaptive") %>%
-    process(plot=TRUE, par=list(main="Adaptive SD noise"))
 ```
 
 
+## Retrieving top m/z-values for Background Classes
+```{r top_mz_values_background}
+
+###BACKGROUND CLASS 1
+topFeatures(run1_ssc, model=list(s=15), class==1)
+
+###BACKGROUND CLASS 2
+topFeatures(run1_ssc, model=list(s=15), class==4)
+
+```
+
+
+## Retrieving top m/z-values for Tissue Classes
+```{r top_mz_values}
+
+###Tissue CLASS 1
+topFeatures(run1_ssc, model=list(s=15), class==2)
+
+###Tissue CLASS 2
+topFeatures(run1_ssc, model=list(s=15), class==3)
+
+```
+
+## Subset to remove background
+```{r remove_background}
+
+run1_finalised <- spatialShrunkenCentroids(run1_test, method="adaptive",
+                                       r=2, s=c(15), k=10)
+
+test_run <- run1_finalised
+pixelData(test_run)@listData$cluster <- resultData(run1_finalised)[[1]]$class
+
+keep_clusters <- c()
+for (cluster in pixelData(test_run)@listData$cluster){
+  if (cluster == 2 | cluster == 3){
+    keep_bool <- TRUE
+  } else{
+    keep_bool <- FALSE
+  }
+  keep_clusters <- c(keep_clusters, keep_bool)
+}
+
+pixelData(run1_pre)@listData$tissue <- keep_clusters
+
+#image(run1_test, mz = 450, subset = tissue)
+
+##subset
+
+run1_subset <- run1_pre[,pixels(run1_pre, subset = tissue)]
+
+
+####Put together a collective plot ####
+image(run1_ssc, model=list(s=15), column=1, col=cols[1], lwd=2, layout = NULL)
+plot1 <- recordPlot()
+image(run1_ssc, model=list(s=15), column=2, col=cols[2], lwd=2, layout = NULL)
+plot2 <- recordPlot()
+image(run1_ssc, model=list(s=15), column=3, col=cols[3], lwd=2, layout = NULL)
+plot3 <- recordPlot()
+image(run1_ssc, model=list(s=15), column=4, col=cols[4], lwd=2, layout = NULL)
+plot4 <- recordPlot()
+image(run1_subset, mz=450.259, plusminus=0.01)
+plot5 <- recordPlot()
+image(run1_subset, mz=448.245, plusminus=0.01)
+plot6 <- recordPlot()
+
+plots <- plot_grid(plot1,
+          plot2, 
+          plot3,
+          plot4,
+          plot5, 
+          plot6,
+          ncol = 2, scale = 0.8)
+
+pdf(paste(OUT_DIR,"run1_segmentation_results.pdf"))
+plots
+dev.off()
+
+```
 
 
 
