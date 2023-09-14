@@ -322,7 +322,7 @@ for (cluster in pixelData(test_run)@listData$cluster){
   keep_clusters <- c(keep_clusters, keep_bool)
 }
 
-pixelData(run1_pre)@listData$tissue <- keep_clusters
+pixelData(run1)@listData$tissue <- keep_clusters
 
 #image(run1_test, mz = 450, subset = tissue)
 
@@ -358,6 +358,112 @@ plots
 dev.off()
 
 ```
+
+
+## Data summary pre- vs post- background removal
+```{r compare_data_summary}
+
+##Pre
+plot(run1_summary)
+plot1 <- recordPlot()
+
+##Post
+run1_post_summary <- summarizeFeatures(run1_subset, "mean")
+plot(run1_post_summary)
+plot2 <- recordPlot()
+
+
+##Pre
+image(run1_summary_tic)
+plot3 <- recordPlot()
+
+##Post
+run1_post_summary_tic <- summarizePixels(run1_subset, c(tic="sum"))
+image(run1_post_summary_tic)
+plot4 <- recordPlot()
+
+
+plots <- plot_grid(plot1,plot2,plot3,plot4, ncol = 2, scale = 0.8)
+
+```
+
+
+
+
+## Tissue Peak Binning and PCA with background removed
+```{r processesing_background_removed_image}
+
+#Run peak binning
+run1__post_summary_ref <- run1_post_summary %>%
+  peakPick(SNR=3) %>%
+  peakAlign(ref="mean",
+            tolerance=0.5,
+            units="mz") %>%
+  peakFilter() %>%
+  process()
+
+run1_clean <- run1_subset %>%
+  normalize(method="rms") %>%
+  peakBin(ref=mz(run1__post_summary_ref),
+          tolerance=0.5,
+          units="mz") %>%
+  process()
+
+
+## PCA analysis
+run1_clean_pca <- PCA(run1_clean, ncomp=3)
+
+image(run1_clean_pca, contrast.enhance="histogram", normalize.image="linear")
+plot(run1_clean_pca, lwd=2)
+```
+
+
+## Run clustering on processed data
+```{r clustering_processed_data}
+set.seed(1)
+run1_clean_ssc <- spatialShrunkenCentroids(run1_clean, method="adaptive",
+                                       r=2, s=c(0,5,10,15,20,25), k=10)
+
+summary(run1_clean_ssc)
+
+## Plot Image Segmentation
+
+image(run1_clean_ssc, model=list(s=c(10,15,20,25)))
+plot(run1_clean_ssc, model=list(s=20), lwd=2)
+
+topFeatures(run1_clean_ssc, model=list(s=0))
+
+
+image(run1_clean, mz=450.259, plusminus=0.01)
+plot1 <- recordPlot()
+image(run1_clean, mz=448.245, plusminus=0.01)
+plot2 <- recordPlot()
+
+plots <- plot_grid(plot1,
+          plot2,ncol = 2, scale = 0.8)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
