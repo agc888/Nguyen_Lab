@@ -33,8 +33,8 @@ sample = samples[i]
 # In[5]:
 
 
-DATA_PATH = "I:/GMLSC1-Q2051/Pfizer/Visium/RAW_DATA/Pfizer/"
-OUT_PATH = "I:/GML001-Q1851/Andrew_C/Pfizer/Visium/"
+DATA_PATH = "/QRISdata/Q2051/Pfizer/Visium/RAW_DATA/Pfizer/"
+OUT_PATH = "/QRISdata/Q1851/Andrew_C/Pfizer/Visium/"
 
 data = st.Read10X(DATA_PATH+sample+"/outs/")
 
