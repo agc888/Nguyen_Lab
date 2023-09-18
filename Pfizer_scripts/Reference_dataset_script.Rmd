@@ -1,0 +1,95 @@
+---
+title: "ScRef_data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Import Libraries 
+```{r librarys}
+library(Seurat)
+library(ggplot2)
+library(Matrix)
+library(readr)
+```
+
+
+## Set Directories
+```{r set_dirs}
+input_dir <- "I:/GMLSC1-Q2051/Pfizer/Reference_Data/Wu_etal_2021_BRCA_scRNASeq/sc_mtx_import/filtered_features_zipped/"
+output_dir <- "I:/GMLSC1-Q2051/Pfizer/Reference_Data/Wu_etal_2021_BRCA_scRNASeq/"
+```
+
+
+## Import scRef dataset
+```{r import_data}
+## Import Ref matrix
+mtx <- Matrix::readMM(paste0(input_dir,"matrix.mtx.gz"))
+
+## Import Ref barcodes
+barcodes <- readr::read_tsv(paste0(input_dir,"barcodes.tsv.gz"), col_names = FALSE)
+
+## Import Ref Features
+features <- readr::read_tsv(paste0(input_dir,"features.tsv.gz"), col_names = FALSE)
+```
+
+
+## Create Seurat Object
+```{r create_seurat_object}
+
+colnames(mtx) <- barcodes$X1
+rownames(mtx) <- features$X1
+
+ref_data <- CreateSeuratObject(mtx, assay = "RNA")
+```
+
+
+## Add metadata
+```{r add_metadata}
+reference  <- LoadH5Seurat("I:/GMLSC1-Q2051/Pfizer/Analysis_Results/Jacky/BC_atlas_xe.h5seurat")
+
+### Match barcodes and metadata
+
+reduced_ref_data <- subset(ref_data, cells = colnames(reference))
+reduced_ref_data@meta.data <- reference@ meta.data
+
+#saveRDS(reduced_ref_data, "I:/GML001-Q1851/Andrew_C/Pfizer/scRNA/Reference_Data/regenerated_ref_data.RDS")
+```
+
+
+## Process Data
+```{r process_data}
+sc_pipeline <- function(sc_data) {
+  
+  # store mitochondrial percentage in object meta data
+  sc_data <- PercentageFeatureSet(sc_data, pattern = "^MT-", col.name = "percent.mt")
+  
+  sc_data <- subset(sc_data, subset = nFeature_RNA > 100 & percent.mt < 5)
+  
+  # run sctransform
+  sc_data <- SCTransform(sc_data, vars.to.regress = "percent.mt", verbose = FALSE)
+  
+  # These are now standard steps in the Seurat workflow for visualization and clustering
+  sc_data <- RunPCA(sc_data, verbose = FALSE)
+  sc_data <- RunUMAP(sc_data, dims = 1:30, verbose = FALSE)
+  
+  sc_data <- FindNeighbors(sc_data, dims = 1:30, verbose = FALSE)
+  sc_data <- FindClusters(sc_data, verbose = FALSE)
+  
+  #Saves processed single-cell dataset 
+  saveRDS(sc_data, file = paste0(output_dir,"Ref_data_processed.RDS"))
+  
+  return(sc_data)
+}
+
+processed_ref <- sc_pipeline(reduced_ref_data)
+```
+
+## Plot Data
+```{r process_data}
+DimPlot(processed_ref, group.by = "celltype_major")
+DimPlot(processed_ref, group.by = "celltype_minor")
+
+```
