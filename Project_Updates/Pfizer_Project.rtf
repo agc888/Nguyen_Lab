@@ -1,0 +1,26 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2709
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww51000\viewh28240\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 ############################### Pfizer Project ############################### \
+\
+#### UPDATE: 18/09/23 #### \
+\
+1. Looked at single cell reference dataset (Wu et.al 2021):\
+	Performed label transfer on this dataset to our sample matched scRNA data\
+	-> initially the reference dataset object used only had 308 genes in it\
+	-> this was fixed using raw data and ~12,000 genes were used to perform label transfer again\
+\
+2. Comparing results to before a lot more cells are labeled as cancer\
+	-> Sub clustering has improved with a lot more of the Luminal subtypes matching\
+	-> Data was normalised when running label transfer\
+\
+NEXT STEP:\
+\
+I will run label transfer again without SCTransform:\
+	-> also look at using clusters rather then the label transfer itself\
+\
+}
