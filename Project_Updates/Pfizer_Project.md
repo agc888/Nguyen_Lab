@@ -1,13 +1,13 @@
-# ### Pfizer Project ###
+# Pfizer Project
 
-# Table of Contents
+## Table of Contents
 1. [Reference Dataset](#Reference Dataset)
 2. [Single Cell Data](#Single Cell Data)
 3. [Visium Data](#Visium Data)
 4. [Xenium Data](#Xenium Data)
 
 
-# Reference Dataset
+## Reference Dataset
 
 #### UPDATE: 18/09/23 #### 
 
@@ -25,16 +25,16 @@ NEXT STEP:
 I will run label transfer again without SCTransform:\
 	-> also look at using clusters rather then the label transfer itself\
 
-# Single Cell Data
+## Single Cell Data
 
 
 
 
-#Visium Data
+## Visium Data
 
 
 
 
 
 
-#Xenium Data
+## Xenium Data
