@@ -30,8 +30,7 @@ I will run label transfer again without SCTransform:
 	
 REULTS:
 
-
-<img src="/~/Downloads/non_normalised_data_comparision.png" alt="MarineGEO circle logo" style="height: 100px; width:100px;"/>
+![alt text](/~/Downloads/non_normalised_data_comparision.png "Title")
 
 
 
