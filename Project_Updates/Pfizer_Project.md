@@ -1,10 +1,10 @@
 # Pfizer Project
 
 # Table of Contents
-1. [Reference Dataset](#Reference Dataset)
-2. [Single Cell Data](#Single Cell Data)
-3. [Visium Data](#Visium Data)
-4. [Xenium Data](#Xenium Data)
+1. [Reference Dataset](# Reference Dataset)
+2. [Single Cell Data](# Single Cell Data)
+3. [Visium Data](# Visium Data)
+4. [Xenium Data](# Xenium Data)
 
 
 # Reference Dataset
