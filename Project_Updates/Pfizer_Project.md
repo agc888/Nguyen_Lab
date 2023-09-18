@@ -1,4 +1,4 @@
-# ######## Pfizer Project ########
+# ### Pfizer Project ###
 
 # Table of Contents
 1. [Reference Dataset](#Reference Dataset)
