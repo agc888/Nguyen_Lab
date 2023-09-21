@@ -7,9 +7,17 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r include=FALSE}
+
+#removes all data from global environment
+rm(list = ls())
+```
+
+
 ## Import Libraries 
 ```{r librarys}
 library(Seurat)
+library(SeuratDisk)
 library(ggplot2)
 library(Matrix)
 library(readr)
@@ -54,8 +62,6 @@ reference  <- LoadH5Seurat("I:/GMLSC1-Q2051/Pfizer/Analysis_Results/Jacky/BC_atl
 
 reduced_ref_data <- subset(ref_data, cells = colnames(reference))
 reduced_ref_data@meta.data <- reference@ meta.data
-
-#saveRDS(reduced_ref_data, "I:/GML001-Q1851/Andrew_C/Pfizer/scRNA/Reference_Data/regenerated_ref_data.RDS")
 ```
 
 
@@ -66,10 +72,10 @@ sc_pipeline <- function(sc_data) {
   # store mitochondrial percentage in object meta data
   sc_data <- PercentageFeatureSet(sc_data, pattern = "^MT-", col.name = "percent.mt")
   
-  sc_data <- subset(sc_data, subset = nFeature_RNA > 100 & percent.mt < 5)
+  sc_data <- subset(sc_data, subset = nFeature_RNA > 20)
   
   # run sctransform
-  sc_data <- SCTransform(sc_data, vars.to.regress = "percent.mt", verbose = FALSE)
+  sc_data <- SCTransform(sc_data, verbose = FALSE)
   
   # These are now standard steps in the Seurat workflow for visualization and clustering
   sc_data <- RunPCA(sc_data, verbose = FALSE)

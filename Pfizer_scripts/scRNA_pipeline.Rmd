@@ -15,10 +15,13 @@ knitr::opts_chunk$set(echo = TRUE)
 rm(list = ls())
 ```
 
+
 ## Import Libraries 
 ```{r librarys}
 library(Seurat)
 library(ggplot2)
+library(dplyr)
+library(scCustomize)
 ```
 
 
@@ -35,7 +38,7 @@ output_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/scRNA/"
 sc_pipeline <- function(ID, inputdir, outputdir) {
   
   outdir <- paste0(outputdir,ID,"/")
-  dir_create(outdir)
+  dir.create(outdir)
   
   sc_data.data <- Read10X(data.dir = paste0(inputdir,ID,"/count/sample_filtered_feature_bc_matrix"))
   # Initialize the Seurat object with the raw (non-normalized data).
@@ -48,8 +51,12 @@ sc_pipeline <- function(ID, inputdir, outputdir) {
   VlnPlot(sc_data, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
   ggsave(paste0(outdir,ID,"_QC_Vln.png"), height=8, width=16)
   
+  
+  sc_data <- subset(sc_data, subset = nFeature_RNA > 20)
+  
+  
   # run sctransform
-  sc_data <- SCTransform(sc_data, vars.to.regress = "percent.mt", verbose = FALSE)
+  sc_data <- SCTransform(sc_data, verbose = FALSE)
   
   # These are now standard steps in the Seurat workflow for visualization and clustering
   sc_data <- RunPCA(sc_data, verbose = FALSE)
@@ -65,6 +72,7 @@ sc_pipeline <- function(ID, inputdir, outputdir) {
 }
 
 ``` 
+
 
 
 ## Run samples
@@ -88,19 +96,17 @@ for (sample in input_sample_list){
 
 #Create Reference directory
 outdir_ref <- paste0(output_dir,"Reference_Data/")
-dir_create(outdir_ref)
+dir.create(outdir_ref)
 
 
 ###load References dataset
-reference  <- LoadH5Seurat("I:/GMLSC1-Q2051/Pfizer/Analysis_Results/Jacky/BC_atlas_xe.h5seurat")
+reference  <- readRDS(file = "I:/GMLSC1-Q2051/Pfizer/Reference_Data/Wu_etal_2021_BRCA_scRNASeq/Ref_data_processed.RDS")
 
 # Subset to ER+ (LumA&LumB)
 reference_processed <- subset(reference, subset = subtype == "ER+")
 
 # Run label transfer
 reference_processed <- reference_processed[,unname(which(colSums(GetAssayData(reference_processed))!=0))]
-reference_processed <- SCTransform(reference_processed)
-
 
 Ref_data <- reference_processed
 
@@ -118,9 +124,11 @@ run_label_transfer <- function(Ref_data, Query_data, ID, output_dir) {
  
   outdir <- paste0(output_dir,ID,"/")
   
+  comm_gene1 <- intersect(rownames(Ref_data), 
+                        rownames(Query_data))
+  
   anchors <- FindTransferAnchors(reference = Ref_data, 
-                                 query = Query_data, 
-                                 normalization.method = "SCT")
+                                 query = Query_data, features = comm_gene1)
   sc_obj.predictions.assay <- TransferData(anchorset = anchors, 
                                               refdata = Ref_data$celltype_major,  
                                               weight.reduction = Query_data[["pca"]], 
@@ -242,6 +250,7 @@ while (idx <= length(input_sample_list)){
 
 ```
 
+
 ## Plot label transfer umaps and cell type proportions for reference dataset
 ```{r ref_dataset_plot}
 
@@ -261,9 +270,11 @@ plot2 <- ggplot(cell_types, aes(y = count, x = samples, fill = celltype_major  ,
     scale_fill_manual(values = unlist(color_dict)) +
     scale_color_manual(values = unlist(color_dict)) + theme_classic() + labs(x = "Cluster", y = "Proportion")
   
-ggsave(paste0(outdir_ref,"Reference_umap_plots.pdf"), plot1/plot2, height = 15) 
+ggsave(paste0(outdir_ref,"Reference_umap_plots.pdf"), plot1+plot2, height = 8, width = 15) 
+plot1+plot2
 
 ```
+
 
 ## Plot Marker Genes for cell types 
 ```{r check_markers}
@@ -322,7 +333,7 @@ while (idx <= length(input_sample_list)){
   new_sample_id  <- gsub("_", "-", input_sample_list[idx])
   
   #gets row in metadata
-  meta_idx <- which(metadata$Subject.ID == new_sample_id)
+  meta_idx <- which(metadata$`ï..Subject.ID` == new_sample_id)
   
   #Add metadata
   lbtr_list[[idx]]@meta.data$sample <- input_sample_list[idx]
@@ -360,7 +371,7 @@ scRNA.combined <- RunUMAP(scRNA.combined, reduction = "pca", dims = 1:40)
 plot1 <- DimPlot(scRNA.combined, group.by = "sample")
 plot2 <- DimPlot(scRNA.combined, group.by = "Tissue.Type")
 plot3 <- DimPlot(scRNA.combined, group.by = "Lum.Class")
-plot4 <- DimPlot(scRNA.combined, group.by = "celltype_major")
+plot4 <- DimPlot(scRNA.combined, group.by = "celltype_major", cols = color_dict)
 plot5 <- DimPlot(scRNA.combined, group.by = "celltype_minor")
 
 plots <- (plot1+plot2+plot3)/(plot4+plot5)

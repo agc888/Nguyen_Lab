@@ -44,7 +44,7 @@ import_visium <- function(sample, input_dir , output_dir, min_genes = 10, min_sp
   
   ### Set up data Directory
   outdir <- paste0(output_dir,sample,"/")
-  dir_create(outdir)
+  dir.create(outdir)
   
   print(paste0("Import - Importing ", sample, " data..."))
   ###Load Visium data
@@ -170,7 +170,11 @@ label_transfer <- function(sc_data, st_data, sample, outdir){
   dir.create(lt_dir)
   
   print(paste0("Label Transfer - Running label transfer for ", sample, " matched scRNA and Visium Data ..."))
-  anchors <- FindTransferAnchors(reference = sc_data, query = st_data, normalization.method = "SCT", verbose = FALSE)
+  
+  comm_gene1 <- intersect(rownames(sc_data), 
+                        rownames(st_data))
+  
+  anchors <- FindTransferAnchors(reference = sc_data, query = st_data, normalization.method = "SCT", features = comm_gene1, verbose = FALSE)
   
   predictions.assay <- TransferData(anchorset = anchors, refdata = sc_data$celltype_major, prediction.assay = TRUE, weight.reduction = st_data[["pca"]], dims = 1:30 , verbose = FALSE)
   predictions.assay1 <- TransferData(anchorset = anchors, refdata = sc_data$celltype_major, prediction.assay = FALSE, weight.reduction = st_data[["pca"]], dims = 1:30 , verbose = FALSE)
@@ -249,7 +253,7 @@ plot_lt <- function(data, sample, outdir, adding_graph = FALSE){
   DefaultAssay(data) <- "predictions_celltype_major"
   features <- rownames(data@assays$predictions_celltype_major@meta.features)
   plot <- SpatialFeaturePlot(data, features = features, ncol = 4)
-  ggsave(paste0(lt_dir, sample,"_label_transfer_proportions.pdf"), plot, height = 15, width = 20)
+  #ggsave(paste0(lt_dir, sample,"_label_transfer_proportions.pdf"), plot, height = 15, width = 20)
   print(plot)
 }
 
@@ -263,7 +267,7 @@ cell_spots <- function(data, sample, outdir){
   plot1 <- SpatialDimPlot(data, group.by = "celltype_major")
   plot2 <- SpatialDimPlot(data, group.by = "celltype_minor")
   plots <- plot1+plot2
-  ggsave(paste0(lt_dir, sample,"_cell_label_transfer.pdf"), plots)
+  #ggsave(paste0(lt_dir, sample,"_cell_label_transfer.pdf"), plots)
   print(plots)
 }
 
@@ -272,7 +276,7 @@ cell_spots <- function(data, sample, outdir){
 idx <- 1
 
 while (idx <= length(vis_sample_list)){
-  plot_lt(vis_lb_tf[[idx]], vis_sample_list[idx], output_dir)
+  #plot_lt(vis_lb_tf[[idx]], vis_sample_list[idx], output_dir)
   cell_spots(vis_lb_tf[[idx]], vis_sample_list[idx], output_dir)
   idx <- idx + 1
 }
