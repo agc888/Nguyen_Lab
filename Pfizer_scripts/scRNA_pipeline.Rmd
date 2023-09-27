@@ -400,3 +400,43 @@ while (idx <= length(input_sample_list)){
 }
 ```
 
+# Save finalised Objects
+```{r save_finalised_objects}
+outdir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Finalised_Objects"
+dir.create(outdir)
+
+scRNA_dir <- paste0(outdir,"/scRNA")
+dir.create(scRNA_dir)
+
+Ref_dir <- paste0(outdir,"/Reference_Data")
+dir.create(Ref_dir)
+
+
+#### Reference Data
+saveRDS(Ref_data_subset, file = paste0(Ref_dir,"/Finalised_Reference_Dataset.RDS"))
+df <- as.data.frame(Ref_data_subset@meta.data[c("celltype_major","celltype_minor")])
+write.csv(df, file=paste0(Ref_dir, "/Finalsed_Reference_Dataset_Metadata.csv"))
+
+#### Single Cell Data
+saveRDS(lbtr_list, paste0(scRNA_dir,"/Finalised_scRNA_Dataset.RDS"))
+
+idx <- 1
+while (idx <= length(input_sample_list)){
+  saveRDS(lbtr_list[[idx]], file = paste0(scRNA_dir,"/Finalised_",input_sample_list[idx],"_Object.RDS"))
+  df <- as.data.frame(lbtr_list[[idx]]@meta.data[c("seurat_clusters","celltype_major","celltype_minor",  "sample", "Tissue.Type","Lum.Class", "Tissue.Region", "Visium.Code")])
+  write.csv(df, file=paste0(scRNA_dir, "/Finalised_",input_sample_list[idx],"_Metadata.csv"))
+
+  idx <- idx + 1
+}
+```
+
+
+
+
+
+
+
+
+
+
+

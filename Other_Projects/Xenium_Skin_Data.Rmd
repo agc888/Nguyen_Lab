@@ -1,0 +1,24 @@
+---
+title: "Xenium_analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries}
+library(Seurat)
+######## FOR RUNNING V5 ########
+options(Seurat.object.assay.version = 'v5')
+################################
+
+```
+
+
+## read in data
+```{r import_data}
+x1 <- LoadXenium("I:/GML001-Q1851/Xenium/Xenium_Skin/output-XETG00114__0006896__CA_1h__20230906__060936/", fov = "fov")
+
+```

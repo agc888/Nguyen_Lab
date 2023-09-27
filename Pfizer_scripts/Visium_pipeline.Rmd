@@ -19,13 +19,14 @@ rm(list = ls())
 ```{r librarys}
 library(Seurat)
 library(ggplot2)
+library(dplyr)
 ```
 
 
 ## Setup Working Directories
 ```{r wd}
 input_dir <- "I:/GMLSC1-Q2051/Pfizer/Visium/RAW_DATA/Pfizer/"
-input_dir_sc <- "I:/GML001-Q1851/Andrew_C/Pfizer/scRNA/"
+input_dir_sc <- "I:/GML001-Q1851/Andrew_C/Pfizer/Finalised_Objects/scRNA/"
 
 output_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Visium/"
 ```
@@ -36,7 +37,7 @@ output_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Visium/"
 
 ###Load scRNA data list
 
-lbtr_list <- readRDS(file = paste0(input_dir_sc, "scRNA_list.RDS"))
+lbtr_list <- readRDS(file = paste0(input_dir_sc, "Finalised_scRNA_Dataset.RDS"))
 
 
 ###Process Visium Data
@@ -48,8 +49,14 @@ import_visium <- function(sample, input_dir , output_dir, min_genes = 10, min_sp
   
   print(paste0("Import - Importing ", sample, " data..."))
   ###Load Visium data
-  data <- Load10X_Spatial(data.dir = paste0(input_dir,sample, "/outs/"))
+  image_data <- Read10X_Image(paste0(input_dir,sample,"/outs/spatial/"))
+  image_data@assay <- "Spatial"
+  image_data@key <- "slice1_"
   
+  mtx_data <- Read10X_h5(paste0(input_dir,sample, "/outs/filtered_feature_bc_matrix.h5 "))
+  
+  data <- CreateSeuratObject(mtx_data, assay = "Spatial")
+  data@images <- list("slice1" = image_data)
   
   ###Run QC
   
