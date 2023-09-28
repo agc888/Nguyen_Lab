@@ -20,6 +20,7 @@ rm(list = ls())
 library(Seurat)
 library(ggplot2)
 library(dplyr)
+library(gridExtra)
 ```
 
 
@@ -157,10 +158,12 @@ plot_list <- list()
 ## Plot data
 idx <- 1
 while (idx <= length(vis_sample_list)){
-  plot <- plot_visium_clusters(vis_clusters[[idx]], vis_sample_list[idx], output_dir, i = idx)
+  plot <- plot_visium_clusters(vis_clusters[[idx]], vis_sample_list[idx], output_dir, adding_graph = TRUE)
   plot_list[[idx]] <- plot 
   idx <- idx + 1
 }
+
+do.call("grid.arrange",c(plot_list, ncol = 3))
 
 ```
 
@@ -219,6 +222,7 @@ while(idx <= length(vis_sample_list)){
   idx <- idx + 1
 }
 
+
 ```
 
 
@@ -249,8 +253,6 @@ for (sample in vis_sample_list){
 ## Plot Spatial Visualisation of Label Transfer 
 ```{r plot_label_transfer}
 
-
-
 ###Plots the proportions of each cell type
 plot_lt <- function(data, sample, outdir, adding_graph = FALSE){
   
@@ -262,11 +264,17 @@ plot_lt <- function(data, sample, outdir, adding_graph = FALSE){
   plot <- SpatialFeaturePlot(data, features = features, ncol = 4)
   #ggsave(paste0(lt_dir, sample,"_label_transfer_proportions.pdf"), plot, height = 15, width = 20)
   print(plot)
+  
+  if (adding_graph == TRUE){
+    #print("adding graph")
+    return(plot)
+  }
+  
 }
 
 
 ### Plots the major cell type label
-cell_spots <- function(data, sample, outdir){
+cell_spots <- function(data, sample, outdir, adding_graph = FALSE){
   
   lt_dir <- paste0(outdir,sample,"/label_transfer/")
   dir.create(lt_dir)
@@ -275,19 +283,27 @@ cell_spots <- function(data, sample, outdir){
   plot2 <- SpatialDimPlot(data, group.by = "celltype_minor")
   plots <- plot1+plot2
   #ggsave(paste0(lt_dir, sample,"_cell_label_transfer.pdf"), plots)
-  print(plots)
+  #print(plots)
+  
+  if (adding_graph == TRUE){
+    #print("adding graph")
+    return(plot1)
+  }
+  
 }
 
 
-
+plot_list <- list()
 idx <- 1
 
 while (idx <= length(vis_sample_list)){
-  #plot_lt(vis_lb_tf[[idx]], vis_sample_list[idx], output_dir)
-  cell_spots(vis_lb_tf[[idx]], vis_sample_list[idx], output_dir)
+  plot_lt(vis_lb_tf[[idx]], vis_sample_list[idx], output_dir)
+  plot <- cell_spots(vis_lb_tf[[idx]], vis_sample_list[idx], output_dir, adding_graph = TRUE)
+  plot_list[[idx]] <- plot
   idx <- idx + 1
 }
 
+do.call("grid.arrange",c(plot_list, ncol = 3))
 
 ```
 

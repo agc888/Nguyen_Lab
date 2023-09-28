@@ -17,8 +17,46 @@ options(Seurat.object.assay.version = 'v5')
 ```
 
 
+```{r directory_paths}
+IMPORT_DIR <- "I:/GML001-Q1851/Xenium/Xenium_Skin/"
+OUTPUT_DIR <- "I:/GML001-Q1851/Andrew_C/Other_Project/Xenium_Skin_Project/"
+```
+
+
 ## read in data
 ```{r import_data}
-x1 <- LoadXenium("I:/GML001-Q1851/Xenium/Xenium_Skin/output-XETG00114__0006896__CA_1h__20230906__060936/", fov = "fov")
+
+load_xenium <- function(sample){
+  xenium_data <- LoadXenium(paste0(IMPORT_DIR,"output-XETG00114__",sample,"__20230906__060936/"), fov = "fov")
+  return(xenium_data)
+}
+
+sample_list <- c("0006896__CA_1h",
+"0006896__CA_24h",
+"0006896__CA_N",
+"0006896__CS_1h",
+"0006896__CS_24h",
+"0006896__CS_N",
+"0006896__FI_1h",
+"0006896__FI_24h",
+"0006896__FI_N",
+"0006897__CM_1h",
+"0006897__CM_24h",
+"0006897__CM_N",
+"0006897__DM_1h",
+"0006897__DM_24h",
+"0006897__DM_N",
+"0006897__JH_1h",
+"0006897__JH_24h",
+"0006897__JH_N")
+
+xen_data <- list()
+
+for (sample in sample_list){
+  data <- load_xenium(sample)
+  sample_name <- strsplit(sample, "__")[[1]][2]
+  xen_data <- c(xen_data, sample_name = data)
+}
+
 
 ```
