@@ -8,10 +8,10 @@ library(Cardinal)
 DATA_DIR <- "/QRISdata/Q1851/Andrew_C/Metabolomics/Data/"
 OUT_DIR <- "/QRISdata/Q1851/Andrew_C/Metabolomics/"
 
-i <- args[1]
+i <- as.integer(args[1])
 
 print(args)
-print(i)
+print(class(i))
 
 
 data_list <- c("VLP94C/vlp94c_dhb","VLP94A/vlp94a_dhb","VLP94D/vlp94d_dhb","VLP94B/vlp94b_dhb")
