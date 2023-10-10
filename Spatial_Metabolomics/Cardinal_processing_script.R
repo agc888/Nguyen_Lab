@@ -1,6 +1,3 @@
-
-
-source("/QRISdata/Q1851/Levi/Visium/BioInformatics_Functions.R")
 args <- commandArgs(trailingOnly = TRUE)
 
 
