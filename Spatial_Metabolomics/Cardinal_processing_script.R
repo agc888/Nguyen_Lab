@@ -10,6 +10,10 @@ OUT_DIR <- "/QRISdata/Q1851/Andrew_C/Metabolomics/"
 
 i <- args[1]
 
+print(args)
+print(i)
+
+
 data_list <- c("VLP94C/vlp94c_dhb","VLP94A/vlp94a_dhb","VLP94D/vlp94d_dhb","VLP94B/vlp94b_dhb")
 sample_name <-c("T1","C1","T2","C2")
 
