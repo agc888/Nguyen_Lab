@@ -61,7 +61,7 @@ saveRDS(data_peaks_test, paste0(folder,sample_name[i],"_test_peak_vignette.RDS")
 
 data_peaks <- data %>%
   normalize(method="rms") %>%
-  peakBin(ref=mz(data_ref_test)) %>%
+  peakBin(ref=mz(data_ref)) %>%
   process()
 
 saveRDS(data_peaks, paste0(folder,sample_name[i],"_peak_vignette.RDS"))
@@ -86,9 +86,3 @@ data_scc <- spatialShrunkenCentroids(data_peaks, method="adaptive",
 
 saveRDS(data_scc, paste0(folder,sample_name[i],"_ssc_vignette.RDS"))
 saveRDS(test_ssc, paste0(folder,sample_name[i],"_ssc_test_vignette.RDS"))
-
-
-
-
-
-
