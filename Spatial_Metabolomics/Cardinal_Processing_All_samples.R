@@ -73,7 +73,8 @@ data <- Cardinal::combine(C1, T1_add, C2_add, T2_add)
 
 print("Normalising Data ...")
 data_pre <- data %>%
-  normalize(method="rms")
+  normalize(method="rms") %>%
+  process()
 
 print("Generating Reference Peaks ...... ")
 
