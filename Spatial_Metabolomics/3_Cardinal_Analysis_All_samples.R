@@ -1,4 +1,4 @@
-print("Starting Analysis Script ... ")
+print("3. Starting Cardinal Downstream Analysis ... ")
 
 #### Import Library ####
 library(Cardinal)
@@ -8,19 +8,29 @@ library(cowplot)
 
 #### Setup Directories #######################################################################################################
 DATA_DIR <- "/QRISdata/Q1851/Andrew_C/Metabolomics/Data/"
-OUT_DIR <- "/QRISdata/Q1851/Andrew_C/Metabolomics/"
-##############################################################################################################################
+OUT_DIR <- "/QRISdata/Q1851/Andrew_C/Metabolomics/Pipeline/"
+
+if (!(dir.exists(OUT_DIR))){
+    print("WARNING: MUST CREATE '/QRISdata/Q1851/Andrew_C/Metabolomics/Pipeline/' FIRST FOR DATA TO SAVE CORRECTLY")
+}
+
+folder <- paste0("/QRISdata/Q1851/Andrew_C/Metabolomics/Pipeline/Analysis/")
+
+if (!(dir.exists(folder))){
+    print(paste0("Creating New Folder - ", folder))
+    print("All Results and Analyses will be saved here!")
+    dir.create(folder)
+}
+###########################
 
 
 
 #### Import Data #############################################################################################################
-folder <- paste0("/QRISdata/Q1851/Andrew_C/Metabolomics/Analysis/All_Samples/Analysis/")
 
 all_data_binned <- readRDS("/QRISdata/Q1851/Andrew_C/Metabolomics/Analysis/All_Samples/Refined/All_Samples_Binned_Data.RDS")
 all_data_ssc <- readRDS("/QRISdata/Q1851/Andrew_C/Metabolomics/Analysis/All_Samples/All_Samples_ssc.RDS")
 
 ##############################################################################################################################
-
 
 
 #### Adding Segmentation #####################################################################################################
@@ -520,5 +530,5 @@ write.csv(markers, paste0(folder, "All_Samples_Tumour_Peaks.csv"))
 # ##############################################################################################################################
 
 
-print("Done! - Files are saved in '/QRISdata/Q1851/Andrew_C/Metabolomics/Analysis/All_Samples/Analysis/'")
+print("Done! - Files are saved in '/QRISdata/Q1851/Andrew_C/Metabolomics/Pipeline/Analysis/'")
 

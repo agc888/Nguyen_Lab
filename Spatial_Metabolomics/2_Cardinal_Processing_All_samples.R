@@ -1,4 +1,4 @@
-args <- commandArgs(trailingOnly = TRUE)
+print("2. Starting Cardinal Processing Analysis ... ")
 
 #### Import Library ####
 library(Cardinal)
@@ -7,17 +7,25 @@ library(Cardinal)
 
 #### Setup Directories ####
 DATA_DIR <- "/QRISdata/Q1851/Andrew_C/Metabolomics/Data/"
-OUT_DIR <- "/QRISdata/Q1851/Andrew_C/Metabolomics/"
+OUT_DIR <- "/QRISdata/Q1851/Andrew_C/Metabolomics/Pipeline/"
+
+if (!(dir.exists(OUT_DIR))){
+    print("WARNING: MUST CREATE '/QRISdata/Q1851/Andrew_C/Metabolomics/Pipeline/' FIRST FOR DATA TO SAVE CORRECTLY")
+}
+
+folder <- "/QRISdata/Q1851/Andrew_C/Metabolomics/Pipeline/Processing/"
+
+if (!(dir.exists(folder))){
+    print(paste0("Creating New Folder - ", folder))
+    print("All Results and Analyses will be saved here!")
+    dir.create(folder)
+}
 ###########################
 
 
-#### Get Index Input from Bash/Job ####
-i <- as.integer(args[1])
-#######################################
-
-
 #### Import Data ####
-folder <- paste0("/QRISdata/Q1851/Andrew_C/Metabolomics/Analysis/All_Samples/Refined/")
+
+print("Samples are input using a mass.range = (160,1500) and a resolution of 10ppm")
 
 C1 <- readImzML("VLP94A/vlp94a_dhb",folder = DATA_DIR, mass.range = c(160,1500), resolution = 10)
 T1 <- readImzML("VLP94C/vlp94c_dhb",folder = DATA_DIR, mass.range = c(160,1500), resolution = 10)
@@ -28,7 +36,7 @@ T2 <- readImzML("VLP94D/vlp94d_dhb",folder = DATA_DIR, mass.range = c(160,1500),
 
 
 #### Combine Samples ####
-print("Combining Samples ... ")
+print("Combining Samples ...... ")
 set_centroid_to_true <- function(data){
   centroided(data) <- TRUE
   return(data)
@@ -71,12 +79,12 @@ pixelData(T2_add) <- T2_add_pixel_data
 data <- Cardinal::combine(C1, T1_add, C2_add, T2_add)
 ##########################
 
-print("Normalising Data ...")
+print("Normalising Data .........")
 data_pre <- data %>%
   normalize(method="rms") %>%
   process()
 
-print("Generating Reference Peaks ...... ")
+print("Generating Reference Peaks ............ ")
 
 data_ref <- data_pre %>%
   peakPick(method = "mad") %>%
@@ -85,7 +93,7 @@ data_ref <- data_pre %>%
 
 #saveRDS(data_ref, paste0(folder,runs[i],"_Reference_Peaks.RDS"))
 
-print("Generating Binned Data .........")
+print("Generating Binned Data ...............")
 
 data_peaks <- data_pre %>%
   peakBin(ref=mz(data_ref)) %>%
@@ -95,17 +103,17 @@ saveRDS(data_peaks, paste0(folder,"All_Samples_Binned_Data.RDS"))
 
 #### Run PCA and SSC Analysis ####
 
-print("Running PCA ............")
-data_pca <- PCA(data_peaks, ncomp=3)
-saveRDS(data_pca, paste0(folder,"All_Samples_pca.RDS"))
+#print("Running PCA ..................")
+#data_pca <- PCA(data_peaks, ncomp=3)
+#saveRDS(data_pca, paste0(folder,"All_Samples_pca.RDS"))
 
 
-print("Running SSC ...............")
-set.seed(1)
-data_scc <- spatialShrunkenCentroids(data_peaks, method="adaptive",
-                                       r=2, s=c(0,5,10,15,20,25), k=5)
+#print("Running SSC .....................")
+#set.seed(1)
+#data_scc <- spatialShrunkenCentroids(data_peaks, method="adaptive",
+#                                       r=2, s=c(0,5,10,15,20,25), k=5)
+#
+#saveRDS(data_scc, paste0(folder,"All_Samples_ssc.RDS"))
 
-saveRDS(data_scc, paste0(folder,"All_Samples_ssc.RDS"))
-
-print("Done! - Files are saved in '/QRISdata/Q1851/Andrew_C/Metabolomics/Analysis/'")
+print("Done! - Files are saved in '/QRISdata/Q1851/Andrew_C/Metabolomics/Pipeline/Processing/'")
 
