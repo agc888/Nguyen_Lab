@@ -1,0 +1,519 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(Seurat) 
+library(SingleCellExperiment)
+library(patchwork)
+library(scater)
+library(plyr)
+library(hdf5r)
+library(ggplot2)
+library(dplyr)
+library(tibble)
+library(data.table)
+library(tidyr)
+library(tidyverse)
+library(spacexr)
+library(Matrix)
+library(janitor)
+options(stringsAsFactors = FALSE)
+
+library(CARD)
+```
+
+
+```{r}
+
+hnc_single_cell_ref <- fread("I:/HNCANCER-Q4793/deconvolution/GSE181919_UMI_counts.txt")
+rownames_counts <- hnc_single_cell_ref$V1; counts_data <- hnc_single_cell_ref[,-1]
+colnames(counts_data) <- gsub("\\.","-",colnames(counts_data))
+counts <- as.data.frame(counts_data)
+rownames(counts) <- rownames_counts
+
+cell_type <- fread("I:/HNCANCER-Q4793/deconvolution/GSE181919_Barcode_metadata.txt")
+cell_type <- t(cell_type) %>% row_to_names(row_number = 1)
+cell_type <- as.factor(cell_type[nrow(cell_type),])
+
+print("counts")
+head(counts)
+print("cell-type")
+head(cell_type)
+
+reference <- spacexr::Reference(counts = counts, cell_types = cell_type)
+
+
+
+
+#create seurat Object
+ref_data <- CreateSeuratObject(counts = as.sparse(counts), meta.data = cell_type_raw)
+sort(table(ref_data@meta.data$cell.type))
+
+barplot(sort(table(ref_data@meta.data$cell.type)), las = 2)
+
+ref_data@meta.data$Barcode <- rownames(ref_data@meta.data)
+
+Idents(ref_data) <- "cell.type"
+
+###SCTransformed ref data
+#ref_data_norm <- SCTransform(ref_data, assay = "RNA", verbose = FALSE)
+
+```
+
+
+
+
+```{r}
+seurat_objs <- readRDS("I:/HNCANCER-Q4793/deconvolution/data.filt_sct.RDS")
+A = subset(x = seurat_objs, subset = slide == "A")
+B = subset(x = seurat_objs, subset = slide == "B")
+C = subset(x = seurat_objs, subset = slide == "C")
+D = subset(x = seurat_objs, subset = slide == "D")
+rm(seurat_objs)
+
+
+run_RCTD <- function(data, name){
+  RCTD_counts_1 <- as.data.frame(GetAssayData(object = data, slot = "counts"))
+  RCTD_coordinates_1 <- GetTissueCoordinates(data)
+  RCTD_puck_1 <- SpatialRNA(RCTD_coordinates_1, RCTD_counts_1, colSums(RCTD_counts_1))
+  print(dim(RCTD_puck_1@counts)) 
+  hist(log(RCTD_puck_1@nUMI,2)) 
+  print(head(RCTD_puck_1@coords)) 
+  barcodes_1 <- colnames(RCTD_puck_1@counts) 
+  plot_puck_continuous(RCTD_puck_1, barcodes_1, RCTD_puck_1@nUMI, ylimit = c(0,round(quantile(RCTD_puck_1@nUMI,0.9))), 
+                     title ='plot of nUMI') 
+  myRCTD_1 <- create.RCTD(RCTD_puck_1, reference, max_cores = 2)
+  myRCTD_1_full <- run.RCTD(myRCTD_1, doublet_mode = "full")
+  norm_weights_1 = sweep(myRCTD_1_full@results$weights, 1, rowSums(myRCTD_1_full@results$weights), '/')
+  colnames(norm_weights_1) <- paste0(colnames(norm_weights_1))
+
+  norm_weights_A <- as.data.frame(t(norm_weights_1))
+  colnames(norm_weights_A) <- substr(colnames(norm_weights_A),3,20)
+  write.csv(as.data.frame(norm_weights_A),paste0("I:/GML001-Q1851/Andrew_C/HNC_Chaminde/RCTD_",name,"_celltype_newref_prop.csv"))
+
+  max_rownames <- apply(as.data.frame(norm_weights_A), 2, function(col) rownames(as.data.frame(norm_weights_A))[which.max(col)])
+  max_rownames <- transform(max_rownames)
+
+  data <- AddMetaData(data, max_rownames$X_data, "RCTD")
+  return(data)
+}
+
+
+add_RCTD_Results <- function(data, path){
+  results <- read_csv(path)
+  results <- data.frame(results)
+  rownames(results) <- results$`...1`
+  results$`...1` <- NULL
+  
+  max_cell_type_for_each_barcode <- apply(t(results), 1, function(row) {
+    colnames(t(results))[which.max(row)]
+  })
+
+  # Create a data frame with the results
+  data@meta.data$RCTD <- max_cell_type_for_each_barcode
+  return(data)
+}
+
+A <- add_RCTD_Results(A,"I:/GML001-Q1851/Andrew_C/HNC_Chaminde/RCTD_A_celltype_newref_prop.csv")
+B <- add_RCTD_Results(B,"I:/GML001-Q1851/Andrew_C/HNC_Chaminde/RCTD_B_celltype_newref_prop.csv")
+C <- add_RCTD_Results(C,"I:/GML001-Q1851/Andrew_C/HNC_Chaminde/RCTD_C_celltype_newref_prop.csv")
+D <- add_RCTD_Results(D,"I:/GML001-Q1851/Andrew_C/HNC_Chaminde/RCTD_D_celltype_newref_prop.csv")
+
+
+```
+
+
+
+
+#CARD
+```{r}
+
+run_card <- function(st_data, sc_data, name){
+  
+  sc_count<- sc_data@assays$RNA$counts
+  sc_meta <- sc_data@meta.data
+  rownames(sc_meta) <- colnames(sc_count)
+  sc_meta$sampleInfo <- rep("sample1", length(sc_meta$cell.type))
+
+  spatial_count<- st_data@assays$Spatial$counts
+  
+  
+  if (name != "A"){
+    tiss_coord <- GetTissueCoordinates(st_data, image = paste0("slice1_",name))
+  } else{
+    tiss_coord <- GetTissueCoordinates(st_data)
+  }
+  
+  tiss_coord$x <- tiss_coord$imagecol
+  tiss_coord$y <- tiss_coord$imagerow
+  tiss_coord <- tiss_coord[,-2:-1]
+
+  rownames(tiss_coord) <- colnames(spatial_count)
+
+  CARD_obj = createCARDObject(
+ 	sc_count = sc_count,
+ 	sc_meta = sc_meta,
+ 	spatial_count = spatial_count,
+ 	spatial_location = tiss_coord,
+ 	ct.varname = "cell.type",
+ 	ct.select = NULL,
+ 	sample.varname = "sampleInfo",
+ 	minCountGene = 100,
+ 	minCountSpot = 5) 
+  
+  CARD_obj = CARD_deconvolution(CARD_object = CARD_obj)
+  
+  df <- CARD_obj@Proportion_CARD
+  rownames(df) <- sub(paste0("^",name,"_"), "", rownames(df))
+  write.csv(t(df), paste0("I:/GML001-Q1851/Andrew_C/HNC_Chaminde/CARD_",name,"_celltype_newref_prop.csv"))
+  return(CARD_obj)
+}
+
+```
+
+```{r}
+CARD_output <- list()
+
+CARD_output[["A"]] <- run_card(A, ref_data, "A")
+CARD_output[["B"]] <- run_card(B, ref_data, "B")
+CARD_output[["C"]] <- run_card(C, ref_data, "C")
+CARD_output[["D"]] <- run_card(D, ref_data, "D")
+
+```
+
+
+```{r}
+
+### Remove Myocytes
+Idents(ref_data) <- "cell.type"
+ref_data_sub <- subset(ref_data, ident = "Myocytes", invert = TRUE)
+
+CARD_sub_output <- list()
+
+CARD_sub_output[["A"]] <- run_card(A, ref_data_sub, "A")
+CARD_sub_output[["B"]] <- run_card(B, ref_data_sub, "B")
+CARD_sub_output[["C"]] <- run_card(C, ref_data_sub, "C")
+CARD_sub_output[["D"]] <- run_card(D, ref_data_sub, "D")
+
+```
+
+
+
+
+
+
+
+
+
+```{r}
+get_label <- function(data){
+  
+  max_column <- apply(data, 1, function(row) {
+    colnames(data)[which.max(row)]
+  })
+
+  # Create a new data frame with the "max" column
+  #new_df <- data.frame(max_column)
+
+  # Print the new data frame
+  return(max_column)
+}
+
+A_max <- get_label(CARD_output[["A"]]@Proportion_CARD)
+B_max <- get_label(CARD_output[["B"]]@Proportion_CARD)
+C_max <- get_label(CARD_output[["C"]]@Proportion_CARD)
+D_max <- get_label(CARD_output[["D"]]@Proportion_CARD)
+
+
+A@meta.data$Label_Transfer<-  A_max
+B@meta.data$Label_Transfer <-  B_max
+C@meta.data$Label_Transfer <- C_max
+D@meta.data$Label_Transfer <-  D_max
+```
+
+
+
+```{r}
+merged <- merge(A, c(B,C,D))
+
+color_dic = list("T.cells" = "#c202f2",
+    "Myocytes" = "#737578",
+    "Mast.cells" = "#fcc708",
+    "Malignant.cells" = "#077187",
+    "Macrophages" = "#78cbf5",
+    "Fibroblasts" = "#8E2043",
+    "Epithelial.cells" = "#f5c69a",
+    "Endothelial.cells" = "#db8839",
+    "Dendritic.cells" = "#b1faf5",
+    "B_Plasma.cells" = "#a2f086" )
+
+
+
+plot <- SpatialDimPlot(merged, group.by = "Label_Transfer", images = c("slice1","slice1_B.2","slice1_C.3","slice1_D.4"), ncol = 2, cols = color_dic, pt.size.factor = 1.4)
+ggsave(plot = plot, filename = "I:/GML001-Q1851/Andrew_C/HNC_Chaminde/Finalised_Figures/Label_Transfer_CARD.pdf")
+
+plot <- SpatialDimPlot(merged, group.by = "RCTD", images = c("slice1","slice1_B.2","slice1_C.3","slice1_D.4"), ncol = 2, cols = color_dic,pt.size.factor = 1.4)
+ggsave(plot = plot, filename = "I:/GML001-Q1851/Andrew_C/HNC_Chaminde/Finalised_Figures/Label_Transfer_RCTD.pdf")
+
+```
+
+
+
+```{r}
+Idents(merged) <- "tissues"
+filtered_merged <- subset(merged, ident = "N", invert = TRUE)
+
+PLOT <- ggplot(filtered_merged@meta.data, aes(x = recurrent, fill = Label_Transfer)) +
+    geom_bar(position = "stack") +
+    labs(title = "Stacked Bar Graph of tissue_site by recurrent and N", x = "recurrent", y = "Count") + scale_fill_manual(values = color_dic) +
+    theme_classic()
+
+ggsave(plot = PLOT, filename = "I:/GML001-Q1851/Andrew_C/HNC_Chaminde/Finalised_Figures/reccurent_Non_cellcounts.pdf")
+
+
+PLOT <- ggplot(filtered_merged@meta.data, aes(x = recurrent, fill = Label_Transfer)) +
+    geom_bar(position = "fill") +
+    labs(title = "Stacked Bar Graph of tissue_site by recurrent and N", x = "recurrent", y = "Count") + scale_fill_manual(values = color_dic) +
+    theme_classic()
+
+ggsave(plot = PLOT, filename = "I:/GML001-Q1851/Andrew_C/HNC_Chaminde/Finalised_Figures/reccurent_Non_cellproportions.pdf")
+
+
+rec.labs <- c("Non-Recurrent", "Recurrent")
+names(rec.labs) <- c("N", "recurrent")
+
+
+filtered_merged@meta.data$patient_id <- sub("_.+", "", filtered_merged@meta.data$sample_id)
+
+PLOT <- ggplot(filtered_merged@meta.data, aes(x = patient_id, fill = Label_Transfer)) +
+    geom_bar(position = "fill") +
+    labs(title = "Cell Type Proportions of Recurrent and Non-Reccurent Samples", x = "recurrent", y = "Count") +
+    scale_fill_manual(values = color_dic) +
+    facet_grid(~ recurrent, labeller = labeller(recurrent = rec.labs), scales = "free") +
+    theme_classic()+theme(strip.background = element_rect(fill="darkgrey"),strip.text = element_text(colour = 'white'), axis.text.x = element_text(angle = 45,hjust = 1))
+
+ggsave(plot = PLOT, filename = "I:/GML001-Q1851/Andrew_C/HNC_Chaminde/Finalised_Figures/reccurent_Non_cellproportions_perSample.pdf")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+export_CARD_results <- function(data){
+  
+}
+CARD_obj = CARD_deconvolution(CARD_object = CARD_obj)
+df <- CARD_obj@Proportion_CARD
+
+rownames(df) <- sub("^A_", "", rownames(df))
+
+write.csv(t(df), "I:/GML001-Q1851/Andrew_C/HNC_Chaminde/CARD_A_celltype_newref_prop.csv")
+
+```
+
+```{r}
+colors = c("#FFD92F","#4DAF4A","#FCCDE5","#D9D9D9","#377EB8","#7FC97F","#BEAED4",
+    "#FDC086","#FFFF99","#386CB0","#F0027F","#BF5B17","#666666","#1B9E77","#D95F02",
+    "#7570B3","#E7298A","#66A61E","#E6AB02","#A6761D")
+
+
+flip_coords <- CARD_obj@spatial_location
+#flip_coords$x <- -flip_coords$x
+#flip_coords$x <- -flip_coords$y
+#flip_coords$y <- (flip_coords$y_1)
+#flip_coords$y_1 <- NULL
+
+
+p1 <- CARD.visualize.pie(
+	proportion = CARD_obj@Proportion_CARD,
+	spatial_location = flip_coords, 
+ 	colors = colors, 
+  	radius = 3) ### You can choose radius = NULL or your own radius number
+print(p1)
+```
+
+
+```{r}
+## select the cell type that we are interested
+ct.visualize = unique(ref_data@meta.data$cell.type)
+## visualize the spatial distribution of the cell type proportion
+p2 <- CARD.visualize.prop(
+	proportion = CARD_obj@Proportion_CARD,        
+	spatial_location = CARD_obj@spatial_location, 
+	ct.visualize = ct.visualize,                 ### selected cell types to visualize
+	colors = c("lightblue","lightyellow","red"), ### if not provide, we will use the default colors
+	NumCols = 4,                                 ### number of columns in the figure panel
+        pointSize = 2.0)                             ### point size in ggplot2 scatterplot  
+print(p2)
+```
+
+
+
+
+```{r}
+scMapping = CARD_SCMapping(CARD_output[["A"]],shapeSpot="Square",numCell=20,ncore=10)
+
+scMapping_B = CARD_SCMapping(CARD_output[["B"]],shapeSpot="Square",numCell=20,ncore=10)
+
+scMapping_C = CARD_SCMapping(CARD_output[["C"]],shapeSpot="Square",numCell=20,ncore=10)
+
+scMapping_D = CARD_SCMapping(CARD_output[["D"]],shapeSpot="Square",numCell=20,ncore=10)
+
+
+
+```
+
+
+```{r}
+library(SingleCellExperiment)
+MapCellCords_A = as.data.frame(colData(scMapping))
+count_SC_A = assays(scMapping)$counts
+
+
+MapCellCords_B = as.data.frame(colData(scMapping_B))
+count_SC_B = assays(scMapping_B)$counts
+
+MapCellCords_C = as.data.frame(colData(scMapping_C))
+count_SC_C = assays(scMapping_C)$counts
+
+MapCellCords_D = as.data.frame(colData(scMapping_D))
+count_SC_D = assays(scMapping_D)$counts
+
+```
+
+```{r}
+df_A = MapCellCords_A
+df_B = MapCellCords_B
+df_C = MapCellCords_C
+df_D = MapCellCords_D
+
+
+
+
+
+p_A = ggplot(df_A, aes(x = x, y = y, colour = CT)) + 
+    geom_point(size = 1) +
+    scale_colour_manual(values =  color_dic) +
+    #facet_wrap(~Method,ncol = 2,nrow = 3) + 
+        theme(plot.margin = margin(0.1, 0.1, 0.1, 0.1, "cm"),
+              panel.background = element_rect(colour = "white", fill="white"),
+              plot.background = element_rect(colour = "white", fill="white"),
+    legend.position="bottom",
+    panel.border = element_rect(colour = "grey89", fill=NA, size=0.5),
+    axis.text =element_blank(),
+    axis.ticks =element_blank(),
+    axis.title =element_blank(),
+    legend.title=element_text(size = 13,face="bold"),
+    legend.text=element_text(size = 12),
+    legend.key = element_rect(colour = "transparent", fill = "white"),
+    legend.key.size = unit(0.45, 'cm'),
+    strip.text = element_text(size = 15,face="bold"))+
+                                guides(color=guide_legend(title="Cell Type"))
+
+
+
+p_B = ggplot(df_B, aes(x = x, y = y, colour = CT)) + 
+    geom_point(size = 1) +
+    scale_colour_manual(values =  color_dic) +
+    #facet_wrap(~Method,ncol = 2,nrow = 3) + 
+        theme(plot.margin = margin(0.1, 0.1, 0.1, 0.1, "cm"),
+              panel.background = element_rect(colour = "white", fill="white"),
+              plot.background = element_rect(colour = "white", fill="white"),
+    legend.position="bottom",
+    panel.border = element_rect(colour = "grey89", fill=NA, size=0.5),
+    axis.text =element_blank(),
+    axis.ticks =element_blank(),
+    axis.title =element_blank(),
+    legend.title=element_text(size = 13,face="bold"),
+    legend.text=element_text(size = 12),
+    legend.key = element_rect(colour = "transparent", fill = "white"),
+    legend.key.size = unit(0.45, 'cm'),
+    strip.text = element_text(size = 15,face="bold"))+
+                                guides(color=guide_legend(title="Cell Type"))
+
+
+
+p_C = ggplot(df_C, aes(x = x, y = y, colour = CT)) + 
+    geom_point(size = 1) +
+    scale_colour_manual(values =  color_dic) +
+    #facet_wrap(~Method,ncol = 2,nrow = 3) + 
+        theme(plot.margin = margin(0.1, 0.1, 0.1, 0.1, "cm"),
+              panel.background = element_rect(colour = "white", fill="white"),
+              plot.background = element_rect(colour = "white", fill="white"),
+    legend.position="bottom",
+    panel.border = element_rect(colour = "grey89", fill=NA, size=0.5),
+    axis.text =element_blank(),
+    axis.ticks =element_blank(),
+    axis.title =element_blank(),
+    legend.title=element_text(size = 13,face="bold"),
+    legend.text=element_text(size = 12),
+    legend.key = element_rect(colour = "transparent", fill = "white"),
+    legend.key.size = unit(0.45, 'cm'),
+    strip.text = element_text(size = 15,face="bold"))+
+                                guides(color=guide_legend(title="Cell Type"))
+
+
+
+p_D = ggplot(df_D, aes(x = x, y = y, colour = CT)) + 
+    geom_point(size = 1) +
+    scale_colour_manual(values =  color_dic) +
+    #facet_wrap(~Method,ncol = 2,nrow = 3) + 
+        theme(plot.margin = margin(0.1, 0.1, 0.1, 0.1, "cm"),
+              panel.background = element_rect(colour = "white", fill="white"),
+              plot.background = element_rect(colour = "white", fill="white"),
+    legend.position="bottom",
+    panel.border = element_rect(colour = "grey89", fill=NA, size=0.5),
+    axis.text =element_blank(),
+    axis.ticks =element_blank(),
+    axis.title =element_blank(),
+    legend.title=element_text(size = 13,face="bold"),
+    legend.text=element_text(size = 12),
+    legend.key = element_rect(colour = "transparent", fill = "white"),
+    legend.key.size = unit(0.45, 'cm'),
+    strip.text = element_text(size = 15,face="bold"))+
+                                guides(color=guide_legend(title="Cell Type"))
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
