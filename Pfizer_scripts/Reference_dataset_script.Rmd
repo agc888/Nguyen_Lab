@@ -29,6 +29,10 @@ library(readr)
 ```{r set_dirs}
 input_dir <- "I:/GMLSC1-Q2051/Pfizer/Reference_Data/Wu_etal_2021_BRCA_scRNASeq/sc_mtx_import/filtered_features_zipped/"
 output_dir <- "I:/GMLSC1-Q2051/Pfizer/Reference_Data/Wu_etal_2021_BRCA_scRNASeq/"
+
+
+MET_DATASET <- "/Users/uqacause/Documents/MET_BREAST_REF_DATA/"
+
 ```
 
 
@@ -42,6 +46,20 @@ barcodes <- readr::read_tsv(paste0(input_dir,"barcodes.tsv.gz"), col_names = FAL
 
 ## Import Ref Features
 features <- readr::read_tsv(paste0(input_dir,"features.tsv.gz"), col_names = FALSE)
+
+
+MET_mtx <- Matrix::readMM(paste0(MET_DATASET,"GSE167036_cell_counts_matrix.mtx.gz"))
+
+## Import Ref barcodes
+MET_barcodes <- readr::read_csv(paste0(MET_DATASET,"GSE167036_barcodes.csv.gz"), col_names = FALSE)
+
+## Import Ref Features
+MET_features <- readr::read_csv(paste0(MET_DATASET,"GSE167036_features.csv.gz"), col_names = FALSE)
+
+MET_metadata <- readr::read_csv(paste0(MET_DATASET,"GSE167036_meta_all.csv.gz"), col_names = FALSE)
+
+
+
 ```
 
 
@@ -52,6 +70,14 @@ colnames(mtx) <- barcodes$X1
 rownames(mtx) <- features$X1
 
 ref_data <- CreateSeuratObject(mtx)
+
+
+
+colnames(MET_mtx) <- MET_barcodes[-1,][["X2"]]
+rownames(MET_mtx) <- MET_features[-1,][["X2"]]
+
+MET_REF <- CreateSeuratObject(MET_mtx)
+
 ```
 
 
@@ -68,7 +94,55 @@ for (column in colnames(reference@meta.data)){
   reduced_ref_data <- AddMetaData(object = reduced_ref_data, metadata = reference@meta.data[column],col.name = column)
 }
 
+colnames(MET_metadata) <- MET_metadata[1,]
+
+
+MET_REF <- AddMetaData(object = MET_REF, metadata = MET_metadata[-1,])
+
 ```
+
+
+```{r}
+Idents(MET_REF) <- "sample_type"
+lymphnodes <- subset(MET_REF, ident = "Lymph Node")
+
+Idents(lymphnodes) <- "ER_statu"
+ER <-  subset(lymphnodes, ident = "positive")
+
+
+
+cell_color_mapping <- c("CD8+ T" = "lightblue",           "CD4+ T" ="darkblue",         
+"CAFs"="brown" ,            "B" ="lightgreen"  ,           
+"Macrophage" = "purple"  ,"plasma B"   = "darkgreen",
+"Epithelial Cells" = "red", "KI67+ cells" = "orange",
+"NK" = "pink",             "TECs"= "grey",             "DCs" = "yellow" ,          "Mast cells"  = "black" )    
+ 
+colour_list <- cell_color_mapping[ER$main_label]
+
+
+
+plot(ER@meta.data$umap_1, ER@meta.data$umap_2, 
+     col = colour_list,      # Color points based on the labels column
+     pch = 16,                    # Use solid circles as point symbols
+     main = "Scatter Plot", 
+     xlab = "X Axis Label", 
+     ylab = "Y Axis Label")
+#legend("topright", legend = levels(MET_REF$main_label), col = 1:length(levels(your_data$labels)), pch = 16)
+
+
+Idents(ER) <- "main_label"
+markers <- FindAllMarkers(ER, assay = "RNA", slot = "counts", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+  
+# filter to only significant hits
+markers <- markers %>% filter(p_val_adj <= 0.0001)
+  #
+
+
+
+```
+
+
+
 
 
 ## Process Data
@@ -100,6 +174,8 @@ sc_pipeline <- function(sc_data) {
 }
 
 processed_ref <- sc_pipeline(reduced_ref_data)
+processed_ref <- sc_pipeline(reduced_ref_data)
+
 ```
 
 ## Plot Data

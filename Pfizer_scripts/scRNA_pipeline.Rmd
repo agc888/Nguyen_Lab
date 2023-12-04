@@ -22,6 +22,9 @@ library(Seurat)
 library(ggplot2)
 library(dplyr)
 library(scCustomize)
+library(pheatmap)
+library(tidyr)
+library(gridExtra)
 ```
 
 
@@ -49,10 +52,12 @@ sc_pipeline <- function(ID, inputdir, outputdir) {
   
   # QC
   VlnPlot(sc_data, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
-  ggsave(paste0(outdir,ID,"_QC_Vln.png"), height=8, width=16)
+  #ggsave(paste0(outdir,ID,"_QC_Vln.png"), height=8, width=16)
   
-  
-  sc_data <- subset(sc_data, subset = nFeature_RNA > 20)
+  selected_c <- WhichCells(sc_data, expression = nFeature_RNA > 20)
+  selected_f <- rownames(sc_data)[Matrix::rowSums(sc_data) > 3]
+
+  sc_data <- subset(sc_data, features = selected_f, cells = selected_c)
   
   
   # run sctransform
@@ -63,11 +68,19 @@ sc_pipeline <- function(ID, inputdir, outputdir) {
   sc_data <- RunUMAP(sc_data, dims = 1:30, verbose = FALSE)
   
   sc_data <- FindNeighbors(sc_data, dims = 1:30, verbose = FALSE)
-  sc_data <- FindClusters(sc_data, verbose = FALSE)
+  
+  return(sc_data)
+}
+
+sc_cluster <- function(sc_data, ID, outputdir, res = 0.5){
+  
+  #outdir <- paste0(outputdir,ID,"/")
+  #dir.create(outdir)
+  
+  sc_data <- FindClusters(sc_data, res = res, verbose = FALSE)
   
   #Saves processed single-cell dataset 
-  saveRDS(sc_data, file = paste0(outdir, ID, "_scRNA_seurat.RDS"))
-  
+  #saveRDS(sc_data, file = paste0(outdir, ID, "_scRNA_seurat.RDS"))
   return(sc_data)
 }
 
@@ -85,35 +98,61 @@ data_list <- list()
 
 for (sample in input_sample_list){
   data <- sc_pipeline(sample, inputdir = input_dir, outputdir = output_dir)
-  data_list <- c(data_list,data)
+  data_list[[sample]] <- data
 }
 
 ```
 
 
+```{r}
+
+for (sample in names(data_list)){
+  data <- sc_cluster(data_list[[sample]],ID = sample, outputdir = output_dir, res = 0.5)
+  data_list[[sample]] <- data
+}
+
+
+dim_plots <- list()
+
+for(sample in names(data_list)){
+  dim_plots[[sample]]<- DimPlot(data_list[[sample]], group.by = "seurat_clusters")
+}
+
+do.call("grid.arrange", dim_plots)
+
+```
+
+
+
+
+
+
+
+
 ## Import scReference data
 ```{r import_ref_data}
 
-#Create Reference directory
+##Create Reference directory
 outdir_ref <- paste0(output_dir,"Reference_Data/")
-dir.create(outdir_ref)
+#dir.create(outdir_ref)
 
 
-###load References dataset
-reference  <- readRDS(file = "I:/GMLSC1-Q2051/Pfizer/Reference_Data/Wu_etal_2021_BRCA_scRNASeq/Ref_data_processed.RDS")
+####load References dataset
+#reference  <- readRDS(file = "I:/GMLSC1-Q2051/Pfizer/Reference_Data/Wu_etal_2021_BRCA_scRNASeq/Ref_data_processed.RDS")
 
-# Subset to ER+ (LumA&LumB)
-reference_processed <- subset(reference, subset = subtype == "ER+")
+## Subset to ER+ (LumA&LumB)
+#reference_processed <- subset(reference, subset = subtype == "ER+")
 
-# Run label transfer
-reference_processed <- reference_processed[,unname(which(colSums(GetAssayData(reference_processed))!=0))]
+## Run label transfer
+#reference_processed <- reference_processed[,unname(which(colSums(GetAssayData(reference_processed))!=0))]
 
-Ref_data <- reference_processed
+#Ref_data <- reference_processed
 
-Idents(Ref_data) <- "celltype_major"
-Ref_data_subset <- subset(Ref_data, idents = "Normal Epithelial", invert = TRUE)
+#Idents(Ref_data) <- "celltype_major"
+#Ref_data_subset <- subset(Ref_data, idents = "Normal Epithelial", invert = TRUE)
 
-saveRDS(Ref_data_subset, file = paste0(outdir_ref, "Reference_scRNA_seurat.RDS"))
+#saveRDS(Ref_data_subset, file = paste0(outdir_ref, "Reference_scRNA_seurat.RDS"))
+Ref_data_subset <- readRDS(paste0(outdir_ref, "Reference_scRNA_seurat.RDS"))
 
 ```
 
@@ -141,7 +180,7 @@ run_label_transfer <- function(Ref_data, Query_data, ID, output_dir) {
   rownames(sc_obj.predictions.assay1) <- colnames(Query_data)
   
   labels <- cbind(sc_obj.predictions.assay,sc_obj.predictions.assay1)
-  write.csv(labels, file=paste0(outdir, ID,"_label_transfer.csv"))
+  #write.csv(labels, file=paste0(outdir, ID,"_label_transfer.csv"))
   
   Query_data$celltype_major <- sc_obj.predictions.assay$predicted.id
   Query_data$celltype_minor <- sc_obj.predictions.assay1$predicted.id
@@ -157,12 +196,9 @@ run_label_transfer <- function(Ref_data, Query_data, ID, output_dir) {
 
 lbtr_list <- list()
 
-idx <- 1
-
-while (idx <= length(input_sample_list)){
-  data <- run_label_transfer(Ref_data_subset, data_list[[idx]], input_sample_list[idx],output_dir = output_dir)
-  lbtr_list <- c(lbtr_list, data)
-  idx <- idx+1
+for (sample in names(data_list)){
+  data <- run_label_transfer(Ref_data_subset, data_list[[sample]], sample,output_dir = output_dir)
+  lbtr_list[[sample]] <- data
 }
 
 
@@ -172,8 +208,93 @@ while(idx <= length(sample_list)){
   idx <- idx + 1
 }
 
+saveRDS(lbtr_list, file = paste0(output_dir, "all_scRNA_label_transfer.RDS"))
+```
+
+
+```{r load_saved_data}
+lbtr_list <- readRDS(file = paste0(output_dir, "all_scRNA_label_transfer.RDS"))
+```
+
+
+
+
+
+
+```{r}
+plots <- list()
+
+for(i in seq(1,length(lbtr_list))){
+  plot <- DimPlot(lbtr_list[[i]],group.by = "seurat_clusters")
+  plots[[i]] <- plot
+}
+
+do.call("grid.arrange", c(plots, ncol=3))
+
+
+lbtr_plots <- list()
+
+for(i in seq(1,length(lbtr_list))){
+  lbtr_plots[[i]]<- DimPlot(lbtr_list[[i]], group.by = "celltype_major")
+}
+
+do.call("grid.arrange", lbtr_plots)
+
+
 
 ```
+
+
+```{r}
+df <- read.csv("/Users/uqacause/Downloads/41467_2022_34581_MOESM4_ESM.csv")
+
+marker_genes <- split(df$gene, df$cluster)
+
+unique_genes <- unlist(marker_genes)
+genes_count <- table(unique_genes)
+
+# Get genes that appear only once
+single_occurrence_genes <- names(genes_count[genes_count == 1])
+
+# Filter original list to keep only genes that appear once
+filtered_list <- lapply(marker_genes, function(cluster_genes) {
+  cluster_genes[cluster_genes %in% single_occurrence_genes]
+})
+
+# Get the first 5 genes for each key
+top_5 <- lapply(filtered_list, function(cluster_genes) {
+  head(cluster_genes, n = 5)
+})
+
+
+
+heatmaps <- list()
+
+for(i in seq(1,length(lbtr_list))){
+  plot <- DotPlot(lbtr_list[[i]], features = top_5 ,group.by = "seurat_clusters") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), axis.text.x.top = element_text(angle = 90, vjust = 0.5, hjust=1))+NoLegend()
+  heatmaps[[input_sample_list[[i]]]] <- plot
+
+}
+
+do.call("grid.arrange", c(heatmaps, ncol=3))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ## Plot label transfer umaps and cell type proportions
@@ -247,8 +368,316 @@ while (idx <= length(input_sample_list)){
   idx <- idx+1
 }
 
+```
+
+
+```{r cluster_annotation}
+
+celltype_colours <- list(
+  "Luminal_Epithelial"="#b3b1a6",
+  "Plasma"= "#24d7ff",     
+  "B_cells" = "#33A02C",      
+  "T_cells" =  "#E31A1C",     
+  "CAFs" = "#FB9A99",          
+  "Myeloid" =  "#1F78B4" ,        
+  "Endothelial"= "#E8d9fc",
+  "Myoepithelial"= "#FF7F00",
+  "Fibroblast" = "yellow",
+  "Adipocyte" = "#B2DF8A"
+  )
+
+
+breast_genes_cellxgene <- list(
+  "T_cells"= c("CCL5", "IL7R", "CD2", "LEPROTL1", "SARAF"),
+  "B_cells"= c("CD37", "IGHM", "MS4A1"),
+  "Plasma"= c("SSR4", "JCHAIN", "SEC11C", "MZB1", "IGHA1", "HERPUD1"),
+  "Myeloid" = c("LYZ", "HLA-DPB1","HLA-DPA1", "HLA-DQA1","HLA-DQB1","HLA-DRA"),
+  "Myoepithelial"= c("KRT17", "KRT14", "DST", "KRT5", "MIR205HG"),
+  "Adipocyte"= c("ACACB", "SOX5", "PDE3B", "EBF1", "WDPCP"),
+  "Endothelial"= c("IFI27", "ADAMTS9", "CLDN5", "TM4SF1"),
+  "Fibroblast"= c("DCN", "LUM", "APOD", "TNFAIP6","DCLK1","PTPRG", "DLC1"),
+  "Luminal_Epithelial"= c("AZGP1", "KRT18", "KRT19", "CHASERR", "CD24")
+  )
+
+breast_genes_chatGPT <- list(
+  "T_cells"= c("CD3E", "CD4", "CD8A", "CD45", "CCR7"),
+  "B_cells"= c("CD19", "CD20", "CD21","CD79A"),
+  "Plasma"= c("CD138", "IRF4", "CD38"),
+  "Myeloid" = c("CD11B", "CD14","CD68", "HLA-DRA"),
+  "Adipocyte"= c("FABP4", "LPL", "ACRP30", "PLIN1", "LEP","DGAT2"),
+  "Endothelial"= c("PECAM1", "CD105", "CD144", "VWF", "ICAM1"),
+  "Fibroblast"= c("THY1", "COL1A1", "FSP1", "VIM","ACTA2"),
+  "Luminal_Epithelial"= c("ESR1", "PGR", "GATA3", "CK8")
+  )
+  
+  
+pathologist_genes <- list("Plasmablasts" = c("NUCB2","FNDC3B","XBP1","FKBP11","ANKRD28","CD38"))
+
+
+
+#DoHeatmap(object = lbtr_list[[1]], features = breast_genes_chatGPT)
+```
+
+
+
+```{r heatmap}
+
+heatmaps <- list()
+idx <- 1
+while (idx <= length(input_sample_list)){
+  plot <- DotPlot(lbtr_list[[idx]], features = breast_genes_chatGPT,group.by = "seurat_clusters") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+NoLegend()
+  heatmaps[[input_sample_list[[idx]]]] <- plot
+  idx <- idx+1
+}
+
+do.call("grid.arrange", c(heatmaps, ncol=3))
+
+
+heatmaps_cellXgene <- list()
+idx <- 1
+while (idx <= length(input_sample_list)){
+  plot <- DotPlot(lbtr_list[[idx]], features = breast_genes_cellxgene,group.by = "seurat_clusters") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+NoLegend()
+  heatmaps_cellXgene[[input_sample_list[[idx]]]] <- plot
+  idx <- idx+1
+}
+
+do.call("grid.arrange", c(heatmaps_cellXgene, ncol=3))
+
 
 ```
+
+
+
+
+
+```{r}
+
+doSeuratHeatmap <- function(data, ident, even_clusters = TRUE, gene_set_dictionary = NULL,feature_list = NULL, assay = "SCT", slot = "scale.data",cells = NULL, scale = FALSE, gene.color.palatte = NULL, cluster.color.palatte = NULL, DEG.File = NULL){
+  
+  DefaultAssay(data) <- assay
+  
+  if (even_clusters == TRUE){
+        cells_splt <- lapply(unique(data@meta.data[ident][,1]), function(i){
+            Idents(data) <- ident
+            spt <- subset(data, ident = i)
+            min_cells <- min(table(data@meta.data[[ident]]))
+            spt_barcodes <- sample(colnames(spt), size = min_cells, replace = FALSE)
+        })
+        cells <- unlist(cells_splt)
+  }
+  
+  if (!(is.null(gene_set_dictionary))){
+    features <- unique(unlist(gene_set_dictionary))
+    
+  } else if (!(is.null(feature_list))){
+    features <- feature_list
+    
+  } else if (!(is.null(DEG.File))){
+    top10 <- read.table(file = DEG.File)
+    gene_list_from_file <- split(top10$gene, top10$cluster)
+    features <- unique(unlist(gene_list_from_file))
+    
+  }else{
+    print("ERROR: No genes were specified")
+  }
+  
+  filtered_features <- c()
+  for (feature in features){
+    
+    if (tryCatch({
+      isFALSE(is.null(FetchData(test, c(feature), layer = slot)))
+      }, error = function(e) {
+        return(FALSE)
+      })){
+      filtered_features <- c(filtered_features, feature)
+      }
+  }
+  
+  hm <- DoHeatmap(data, features = c(filtered_features), assay = assay, slot =slot, group.bar = TRUE, cells = cells)
+  
+  mt_df <- hm$data
+  mt_df <- mt_df %>% na.omit()
+  df.wide <- pivot_wider(mt_df, names_from = Feature, values_from = Expression)
+  df.wide <- as.data.frame(df.wide)
+  rownames(df.wide) <- df.wide$Cell
+  df.wide <-  df.wide[,-1]
+  df.wide <- mutate_all(df.wide, function(x) as.numeric(as.character(x)))
+  df.wide <- df.wide %>% arrange(Identity)
+  
+  annot_row <- df.wide %>% select(Identity)
+  
+  
+  prev_ident <- annot_row$Identity[1]
+  row_gaps <- c()
+  current_change <- 0
+    
+  for (ident in annot_row$Identity){
+      
+    if(!(ident == prev_ident)){
+      prev_ident <- ident
+      row_gaps <- c(row_gaps, current_change)
+      }
+      current_change <- current_change + 1
+    }
+  
+  
+  df.wide$Identity <- NULL
+  
+  if (!(is.null(gene_set_dictionary))){
+    gene_dict <- gene_set_dictionary
+    
+  } else if (!(is.null(DEG.File))){
+    gene_dict <- gene_list_from_file
+    
+  } else {
+    gene_dict <- NULL
+  }
+  
+  if (!(is.null(gene_dict))){ 
+    cell_type_genes <- c()
+    for (gene in colnames(df.wide)){
+      matching_keys <- sapply(gene_dict, function(genes) gene %in% genes)
+      key_with_gene <- names(gene_dict[matching_keys])[1]
+      cell_type_genes <- c(cell_type_genes, key_with_gene)
+    }
+    annot_col <- data.frame(Cell_Type = factor(cell_type_genes))
+    rownames(annot_col) <- colnames(df.wide)
+    
+    print(annot_col)
+    
+    
+    prev_word <- annot_col$Cell_Type[1]
+    col_gaps <- c()
+    current_change <- 0
+    
+    for (word in annot_col$Cell_Type){
+      print(word)
+      if(!(word == prev_word)){
+        prev_word <- word
+        col_gaps <- c(col_gaps, current_change)
+      }
+      current_change <- current_change + 1
+    }
+
+    
+  } else{
+    annot_col <- NULL
+  }
+  
+  if (scale){
+    scale_by <- "column"
+  } else{
+    scale_by <- "none"
+  }
+  
+  
+  color_pal <- list()
+  
+  if (!(is.null(cluster.color.palatte))){
+    color_pal[[ident]] <- unlist(cluster.color.palatte)
+  }
+  else if (!(is.null(gene.color.palatte))){
+    color_pal[["Cell_Type"]] <- unlist(gene.color.palatte)
+  } else {
+    color_pal <- NULL
+  }
+ 
+  
+  pht <- pheatmap(df.wide, cluster_cols = FALSE, cluster_rows = FALSE, annotation_row = annot_row, gaps_row = row_gaps, show_rownames = FALSE, angle = "90", annotation_col = NULL, gaps_col = col_gaps, annotation_legend = TRUE, scale = scale_by, annotation_colors = color_pal)
+  
+  return(list(hm,pht))
+}
+
+```
+
+```{r}
+
+heatmaps <- list()
+idx <- 1
+while (idx <= length(input_sample_list)){
+  plots <- doSeuratHeatmap(lbtr_list[[idx]], gene_set_dictionary = breast_genes_chatGPT, "seurat_clusters")
+  heatmaps[[input_sample_list[idx]]] <- plots
+  idx <- idx+1
+}
+
+#test_out <- doSeuratHeatmap(test, DEG.File = paste0(output_dir,sample,"/DE_analysis/", sample,"_pos_top10markers.txt"), "seurat_clusters")
+
+```
+
+
+## Refine Celltyping by clusters
+```{r refine_celltyping}
+
+get_cluster_genes <- function(data, sample, outdir){
+  
+  ##Make New Directory for Analsysis files
+  outdir.DE <- paste0(outdir,sample,"/DE_analysis/")
+  dir.create(outdir.DE)
+
+  Idents(data) <- "seurat_clusters" 
+
+  #### Look at only UP-regulated Genes ####
+  markers <- FindAllMarkers(data, assay = "SCT", slot = "data", only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+  
+  # filter to only significant hits
+  markers <- markers %>% filter(p_val_adj <= 0.0001)
+  #write.table(markers, file = paste0(outdir.DE, sample,"_pos_allmarkers.txt"), sep = "\t", quote = FALSE, col.names = NA)
+
+  # Gets Top10 markers for each cluster
+  #top10 <- markers %>% group_by(cluster) %>% arrange(-avg_log2FC) %>% dplyr::slice(1:10)
+  #write.table(top10, file = paste0(outdir.DE, sample,"_pos_top10markers.txt"), sep = "\t", quote = FALSE, col.names = NA)
+  
+  return(top10)
+
+}
+
+All_Sample_Marker_Gene_Dictionary <- list()
+
+idx <- 1
+while (idx <= length(input_sample_list)){
+  marker_gene_df <- get_cluster_genes(lbtr_list[[idx]], input_sample_list[idx],output_dir)
+  All_Sample_Marker_Gene_Dictionary <- c(All_Sample_Marker_Gene_Dictionary, setNames(list(marker_gene_df), input_sample_list[idx]))
+  
+  idx <- idx+1
+}
+
+```
+
+
+
+
+```{r enrichr}
+All_Sample_Marker_Gene_Dictionary
+
+
+
+dbs <- c("HuBMAP_ASCTplusB_augmented_2022","PanglaoDB_Augmented_2021","Jensen_TISSUES","GTEx_Tissue_Expression_Up","Human_Gene_Atlas")
+
+db <- c("HuBMAP_ASCTplusB_augmented_2022")
+
+for (sample in names(All_Sample_Marker_Gene_Dictionary)){
+  data <- All_Sample_Marker_Gene_Dictionary[[sample]]
+  data_dic <- split(data$gene, data$cluster)
+  
+  enrichr_results <- list()
+  for(cluster in names(data_dic)){
+    enriched <- enrichr(data_dic[[cluster]], db)
+    enrichr_results[[cluster]] <- enriched
+    
+    print(plotEnrich(enriched[[1]], showTerms = 5, numChar = 40, y = "Count", orderBy = "P.value"))
+  }
+  
+  
+}
+
+
+
+
+```
+
+
+
+
 
 
 ## Plot label transfer umaps and cell type proportions for reference dataset
