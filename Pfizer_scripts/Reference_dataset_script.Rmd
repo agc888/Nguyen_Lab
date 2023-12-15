@@ -135,9 +135,8 @@ markers <- FindAllMarkers(ER, assay = "RNA", slot = "counts", only.pos = TRUE, m
   
 # filter to only significant hits
 markers <- markers %>% filter(p_val_adj <= 0.0001)
-  #
 
-
+write.csv(markers, "I:/GML001-Q1851/Andrew_C/Pfizer/metastatic_breast_cancer_reference_marker_genes.csv")
 
 ```
 

@@ -227,24 +227,7 @@ while(idx <= length(vis_sample_list)){
 
 
 ```{r}
-#### Load Label Transfered Visium Objects
-load_Visium <- function(sample, outdir){
-  data <- readRDS(paste0(outdir,sample,"/label_transfer/",sample,"_label_transfer.RDS"))
-  return(data)
-}
-
-#Other_inputs_needed
-output_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Visium/"
-vis_sample_list <- c("VLP78_A",  "VLP78_D",  "VLP79_A",  "VLP79_D",  "VLP80_A",  "VLP80_D",  "VLP81_A",  "VLP82_A",  "VLP82_D",  "VLP83_A",  "VLP83_D")
-vis_lb_tf <- list()
-
-
-for (sample in vis_sample_list){
-  data <- load_Visium(sample,output_dir)
-  vis_lb_tf <- c(vis_lb_tf, data)
-}
-
-
+InstallData("ifnb")
 
 ```
 
@@ -433,6 +416,53 @@ celltype_proportion(V83_D, "V83_D")
 
 
 ```
+
+
+
+
+```{r}
+
+#### Load Label Transfered Visium Objects
+
+load_Visium <- function(sample, outdir){
+  data <- readRDS(paste0(outdir,sample,"/label_transfer/",sample,"_label_transfer.RDS"))
+  return(data)
+}
+
+#Other_inputs_needed
+output_dir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Visium/"
+vis_sample_list <- c("VLP78_A",  "VLP78_D",  "VLP79_A",  "VLP79_D",  "VLP80_A",  "VLP80_D",  "VLP81_A",  "VLP82_A",  "VLP82_D",  "VLP83_A",  "VLP83_D")
+
+vis_lb_tf <- list()
+
+
+for (sample in vis_sample_list){
+  data <- load_Visium(sample,output_dir)
+  vis_lb_tf[[sample]] <-  data
+}
+
+```
+
+
+
+```{r}
+tumour_only <- list()
+for (sample in names(vis_lb_tf)){
+    Idents(vis_lb_tf[[sample]]) <- "celltype_major"
+    sub <- subset(vis_lb_tf[[sample]], ident = "Cancer Epithelial")
+    tumour_only[[sample]] <- sub
+}
+
+p.features <- SelectIntegrationFeatures(tumour_only, nfeatures = 3000, verbose = FALSE)
+
+
+p.prepsct <- PrepSCTIntegration(object.list = tumour_only, 
+                              anchor.features = p.features, verbose = FALSE)
+
+
+```
+
+
 
 
 

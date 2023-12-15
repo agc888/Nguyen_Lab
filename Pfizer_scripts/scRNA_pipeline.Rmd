@@ -246,9 +246,10 @@ do.call("grid.arrange", lbtr_plots)
 
 
 ```{r}
-df <- read.csv("/Users/uqacause/Downloads/41467_2022_34581_MOESM4_ESM.csv")
+#df <- read.csv("/Users/uqacause/Downloads/41467_2022_34581_MOESM4_ESM.csv")
+markers <- read.csv("I:/GML001-Q1851/Andrew_C/Pfizer/metastatic_breast_cancer_reference_marker_genes.csv")
 
-marker_genes <- split(df$gene, df$cluster)
+marker_genes <- split(markers$gene, markers$cluster)
 
 unique_genes <- unlist(marker_genes)
 genes_count <- table(unique_genes)
@@ -271,12 +272,84 @@ top_5 <- lapply(filtered_list, function(cluster_genes) {
 heatmaps <- list()
 
 for(i in seq(1,length(lbtr_list))){
-  plot <- DotPlot(lbtr_list[[i]], features = top_5 ,group.by = "seurat_clusters") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), axis.text.x.top = element_text(angle = 90, vjust = 0.5, hjust=1))+NoLegend()
-  heatmaps[[input_sample_list[[i]]]] <- plot
+  plot <- DotPlot(lbtr_list[[i]], features = top_5 ,group.by = "celltype_major") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), axis.text.x.top = element_text(angle = 90, vjust = 0.5, hjust=1))+NoLegend()
+  heatmaps[[sample_list[[i]]]] <- plot
 
 }
 
-do.call("grid.arrange", c(heatmaps, ncol=3))
+plot <- do.call("grid.arrange", c(heatmaps, ncol=3))
+
+
+
+
+
+
+color_dict <- list(
+  "Cancer Epithelial"="#b3b1a6",
+  "Plasmablasts"= "#24d7ff",     
+  "B-cells" = "#33A02C",      
+  "T-cells" =  "#E31A1C",     
+  "CAFs" = "#FB9A99",          
+  "Myeloid" =  "#1F78B4" ,        
+  "Endothelial"= "#E8d9fc",
+  "PVL"= "#FF7F00"                  
+  )
+
+
+
+plot_annotations <- function(data, sample, output_dir, adding_graph = FALSE){
+  
+  plot1 <- DimPlot(data, group.by = "seurat_clusters")
+  plot2 <- DimPlot(data, group.by = "celltype_major", cols = color_dict)
+  
+  cell_type_counts <- data@meta.data %>%
+    group_by(seurat_clusters, celltype_major) %>%
+    summarise(count = n())
+  
+ cell_type_counts <- cell_type_counts %>%
+  mutate(color = unlist(color_dict[celltype_major]))
+ 
+ unique_labels <- unique(cell_type_counts$celltype_major)
+  
+ # Create a named vector of corresponding colors
+ legend_colors <- unlist(color_dict[unique_labels])
+
+ plot3 <- ggplot(cell_type_counts, aes(y = count, x = seurat_clusters, fill = celltype_major, color = celltype_major)) +
+    geom_bar(position = "fill", stat = "identity", width = 0.8) +
+    scale_fill_manual(values = unlist(color_dict)) +
+    scale_color_manual(values = unlist(color_dict)) +
+    coord_flip() + theme_classic() + labs(x = "Cluster", y = "Proportion")
+  
+ 
+ cell_types <- data@meta.data %>%
+    group_by(celltype_major) %>%
+    summarise(count = n()) %>%
+    mutate(Proportion = count / sum(count))
+ 
+ cell_types$samples <- sample
+ 
+ plot5 <- DotPlot(data, features = top_5 ,group.by = "celltype_major") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+NoLegend()
+
+  plot4 <- DotPlot(data, features = top_5 ,group.by = "seurat_clusters") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+NoLegend()
+  
+  
+  plot <- (plot1 + plot2+plot3)/(plot4+plot5)
+  ggsave(paste0(output_dir, sample, "/", sample,"_new_annotations.pdf"),plot, height = 10, width = 20)
+ 
+  if (adding_graph == TRUE){
+    return(plot)
+  }
+  
+}
+
+plot_list <- list()
+
+idx <- 1
+while (idx <= length(input_sample_list)){
+  plot <- plot_annotations(lbtr_list[[idx]], input_sample_list[idx],output_dir = output_dir, adding_graph = TRUE)
+  plot_list[[idx]] <- plot
+  idx <- idx+1
+}
 
 ```
 
@@ -647,31 +720,28 @@ while (idx <= length(input_sample_list)){
 
 
 ```{r enrichr}
-All_Sample_Marker_Gene_Dictionary
+#All_Sample_Marker_Gene_Dictionary
 
 
 
-dbs <- c("HuBMAP_ASCTplusB_augmented_2022","PanglaoDB_Augmented_2021","Jensen_TISSUES","GTEx_Tissue_Expression_Up","Human_Gene_Atlas")
+#dbs <- c("HuBMAP_ASCTplusB_augmented_2022","PanglaoDB_Augmented_2021","Jensen_TISSUES","GTEx_Tissue_Expression_Up","Human_Gene_Atlas")
 
-db <- c("HuBMAP_ASCTplusB_augmented_2022")
+#db <- c("HuBMAP_ASCTplusB_augmented_2022")
 
-for (sample in names(All_Sample_Marker_Gene_Dictionary)){
-  data <- All_Sample_Marker_Gene_Dictionary[[sample]]
-  data_dic <- split(data$gene, data$cluster)
+#for (sample in names(All_Sample_Marker_Gene_Dictionary)){
+#  data <- All_Sample_Marker_Gene_Dictionary[[sample]]
+#  data_dic <- split(data$gene, data$cluster)
   
-  enrichr_results <- list()
-  for(cluster in names(data_dic)){
-    enriched <- enrichr(data_dic[[cluster]], db)
-    enrichr_results[[cluster]] <- enriched
-    
-    print(plotEnrich(enriched[[1]], showTerms = 5, numChar = 40, y = "Count", orderBy = "P.value"))
-  }
+#  enrichr_results <- list()
+#  for(cluster in names(data_dic)){
+#    enriched <- enrichr(data_dic[[cluster]], db)
+#    enrichr_results[[cluster]] <- enriched
+#    
+#    print(plotEnrich(enriched[[1]], showTerms = 5, numChar = 40, y = "Count", orderBy = "P.value"))
+#  }
   
   
-}
-
-
-
+#}
 
 ```
 
@@ -829,6 +899,7 @@ while (idx <= length(input_sample_list)){
 }
 ```
 
+
 # Save finalised Objects
 ```{r save_finalised_objects}
 outdir <- "I:/GML001-Q1851/Andrew_C/Pfizer/Finalised_Objects"
@@ -862,8 +933,31 @@ while (idx <= length(input_sample_list)){
 
 
 
-## Downstream Analysis
-```{r hallmarking}
+## compare annotations
+```{r compare}
+
+df <- read.csv("I:/GML001-Q1851/Andrew_C/Pfizer/brain_UniCellDeconvolution_scRNA.csv")
+
+names(lbtr_list) <- sample_list
+
+brain <- list(lbtr_list[[2]],lbtr_list[[3]])
+names(brain) <- c(sample_list[2],sample_list[3])
+
+check <- list()
+for (sample in names(brain)){
+  sub <- df[df["sample"] == sample,]
+  sub$X_new <- sub("-*.$", "", sub$X)
+  rownames(sub)<-sub$X_new
+  brain[[sample]]@meta.data$pred_celltype_ucdbase <- sub$pred_celltype_ucdbase
+  check[[sample]] <- brain[[sample]]
+}
+
+
+
+
+
+
+
 
 ```
 
