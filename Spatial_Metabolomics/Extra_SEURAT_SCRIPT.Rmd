@@ -1,0 +1,189 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+
+add_tumour_annotation <- function(data_binned, data_ssc, cancer_class){
+  
+  data_bin <- data_binned
+  classes <- resultData(data_ssc)[[6]][[1]]
+  pixel_data <- pixelData(data_bin)
+  
+  
+  cancer_class_column <- c()
+  for (row in classes){
+    cancer <- FALSE
+    if (row == cancer_class){
+         cancer <- TRUE
+    }
+    cancer_class_column <- c(cancer_class_column,cancer)
+  }
+      
+  pixel_data[["cancer_class"]] <- cancer_class_column
+  
+  treatment_list <- c()
+  
+  for (run in pixel_data@run){
+    
+    treated <- "Control"
+    if (run == "VLP94C/vlp94c_dhb"|| run == "VLP94D/vlp94d_dhb"){
+      treated <- "Treated"
+    }
+    treatment_list <- c(treatment_list, treated)
+    
+  }
+  
+  pixel_data[["treatment_class"]] <- treatment_list
+  
+  pixel_data[["region"]] <- classes
+  
+  pixelData(data_bin) <- pixel_data
+  return(data_bin)
+
+}
+
+
+cardinal_to_seurat <- function(data,run_name, seurat.coord = NULL, export.counts.path = NULL){
+  
+  run_data <- subsetPixels(data, run(data) == paste0(run_name))
+  sparse_matrix <- as.sparse(spectra(run_data))
+  
+  if (!(is.null(seurat.coord))){
+    pixel_data <- pixelData(run_data)
+    pixel_data[[1,]] <- seurat.coord$X_new # changes coordinates to matched Visium Object
+    pixel_data[[2,]] <- seurat.coord$Y_new
+    pixelData(run_data) <- pixel_data 
+  }
+  
+  spot_name <- c()
+  
+  for(idx in seq(1,length(pixelData(run_data)[[1]]))){
+    x_coord <- pixelData(run_data)[[1,]][idx]
+    y_coord <- pixelData(run_data)[[2,]][idx]
+    name <- paste0(x_coord,"_",y_coord)
+    spot_name <- c(spot_name, name)
+  }
+
+  colnames(sparse_matrix)<- spot_name
+  rownames(sparse_matrix)<- paste("mz-", featureData(run_data)@mz, sep = "") 
+  return(sparse_matrix)
+  # if (!(is.null(export.counts.path))){
+  #   h5File <- h5file(export.counts.path, mode = "w")
+  #   h5write(t(sparse_matrix), name = "my_sparse_mtx",h5File) 
+  #   h5close(h5file)
+  # }
+  # 
+  # seuratobj <- CreateSeuratObject(sparse_matrix, assay = "Spatial")
+  # seuratobj <- AddMetaData(seuratobj,col.name = "cancer_class", metadata = pixelData(run_data)[[4,]])
+  # seuratobj <- AddMetaData(seuratobj,col.name = "treatment_class", metadata = pixelData(run_data)[[5,]])
+  # seuratobj <- AddMetaData(seuratobj,col.name = "ssc_region", metadata = pixelData(run_data)[[6,]])
+  # 
+  # 
+  # ## Add spatial data
+  # cents <- CreateCentroids(data.frame(x = c(pixelData(run_data)[[1,]]), y = c(pixelData(run_data)[[2,]]), cell = c(spot_name)))
+  # 
+  # 
+  # segmentations.data <- list(
+  #   "centroids" = cents,
+  #   "segmentation" = NULL
+  # )
+  # 
+  # coords <- CreateFOV(
+  #   coords = segmentations.data,
+  #   type = c("segmentation", "centroids"),
+  #   molecules = NULL,
+  #   assay = "Spatial"
+  # )
+  # 
+  # seuratobj[["fov"]] <- coords
+  # 
+  # return(seuratobj)
+}
+
+
+all_data_binned <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/All_Samples/Refined/All_Samples_Binned_Data.RDS")
+all_data_ssc <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/All_Samples/All_Samples_ssc.RDS")
+
+all_data <- add_tumour_annotation(all_data_binned, all_data_ssc, "3")
+
+seurat_A <- cardinal_to_seurat(all_data,"VLP94A/vlp94a_dhb")
+seurat_C <- cardinal_to_seurat(all_data,"VLP94C/vlp94c_dhb")
+#Run2
+seurat_B <- cardinal_to_seurat(all_data,"VLP94B/vlp94b_dhb")
+seurat_D <- cardinal_to_seurat(all_data,"VLP94D/vlp94d_dhb")
+
+```
+
+
+
+
+```{r}
+
+find_nearest <- function(data, target_mz){
+  
+  numbers <- as.numeric(gsub("mz-", "", Features(data)))
+  closest_number <- numbers[which.min(abs(numbers - target_mz))]
+  return(paste0("mz-",closest_number))
+}
+
+### Plot Segmentation Results
+plot1 <-ImageDimPlot(seurat_A, fov = "fov", cols = "polychrome", group.by = "ssc_region", size = 4, border.color = "black") + 
+  ImageDimPlot(seurat_C, fov = "fov", cols = "polychrome", group.by = "ssc_region", size = 4, border.color = "black")+
+  ImageDimPlot(seurat_B, fov = "fov", cols = "polychrome", group.by = "ssc_region", size = 4, border.color = "black")+
+  ImageDimPlot(seurat_D, fov = "fov", cols = "polychrome", group.by = "ssc_region", size = 4, border.color = "black")
+
+### Plot Drug m/z's
+plot2 <- ImageFeaturePlot(seurat_A, features = c(find_nearest(seurat_A,448.24)), size = 3, axes = FALSE, border.color = "black")+ scale_fill_gradientn(limits= c(1,100),colours = c(rep("#161616",10),col.map("jet")[1:90]),na.value = "black")+
+  ImageFeaturePlot(seurat_C, features = c(find_nearest(seurat_C,448.24)), size = 3, axes = FALSE, border.color = "black")+ scale_fill_gradientn(limits= c(1,100),colours = c(rep("#161616",10),col.map("jet")[1:90]),na.value = "black")+
+  ImageFeaturePlot(seurat_B, features = c(find_nearest(seurat_B,448.24)), size = 3, axes = FALSE, border.color = "black")+ scale_fill_gradientn(limits= c(1,100),colours = c(rep("#161616",10),col.map("jet")[1:90]),na.value = "black")+
+  ImageFeaturePlot(seurat_D, features = c(find_nearest(seurat_D,448.24)), size = 3, axes = FALSE, border.color = "black")+ scale_fill_gradientn(limits= c(1,100),colours = c(rep("#161616",10),col.map("jet")[1:90]),na.value = "black")
+
+
+plot3 <- ImageFeaturePlot(seurat_A, features = c(find_nearest(seurat_A,450.25)), size = 4, axes = FALSE) + scale_color_gradient(low="grey", high="red")+
+  ImageFeaturePlot(seurat_C, features = c(find_nearest(seurat_C,450.25)), size = 4, axes = FALSE) + scale_color_gradient(low="grey", high="red")+
+  ImageFeaturePlot(seurat_B, features = c(find_nearest(seurat_B,450.25)), size = 4, axes = FALSE) + scale_color_gradient(low="grey", high="red")+
+  ImageFeaturePlot(seurat_D, features = c(find_nearest(seurat_D,450.25)), size = 4, axes = FALSE) + scale_color_gradient(low="grey", high="red")
+
+### Merge objects together
+data <- merge(seurat_A, c(seurat_C,seurat_B, seurat_D))
+
+```
+
+
+
+```{r}
+Idents(test) <- "treatment_class"
+markers <- FindAllMarkers(seurat_C, assay = "Spatial", slot = "data", min.pct = 0.25, logfc.threshold = 0.25, only.pos = TRUE)
+markers <- markers %>% dplyr::filter(p_val_adj <= 0.05)
+```
+
+
+
+
+
+```{r}
+
+vizgen.obj <- SCTransform(seurat_A, assay = "Spatial")
+vizgen.obj <- RunPCA(vizgen.obj, npcs = 30, features = rownames(vizgen.obj))
+vizgen.obj <- RunUMAP(vizgen.obj, dims = 1:30)
+vizgen.obj <- FindNeighbors(vizgen.obj, reduction = "pca", dims = 1:30)
+vizgen.obj <- FindClusters(vizgen.obj, resolution = 0.3)
+
+```
+
+
+
+
+

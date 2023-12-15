@@ -1,0 +1,628 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(Cardinal)
+library(cowplot)
+```
+
+```{r makingcustompalatte}
+library(scales)
+
+# Define the starting and ending colors
+start_color <- "#00008BFF"
+end_color <- "#00F0FFFF"
+
+# Number of steps
+n_steps <- 70
+
+# Create a custom color palette with interpolated colors
+custom_palette <- colorRampPalette(c(start_color, end_color))(n_steps)
+
+# The custom_palette now contains 40 interpolated colors between start_color and end_color.
+
+new_jet <- c(custom_palette, col.map("jet")[31:100])[1:100]
+
+
+```
+
+
+
+```{r}
+# Import data
+run1_binned <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/Run_1/Run_1_Binned_Data.RDS")
+run1_pca <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/Run_1/Run_1_pca.RDS")
+run1_scc <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/Run_1/Run_1_ssc.RDS")
+  
+
+run2_binned <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/Run_2/Run_2_Binned_Data.RDS")
+run2_pca <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/Run_2/Run_2_pca.RDS")
+run2_scc <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/Run_2/Run_2_ssc.RDS")
+
+```
+
+
+
+## Get Cluster
+```{r}
+
+get_design_clusters <- function(ssc_data){
+  design_list <- list()
+  for (i in seq(1,6)){
+    design <- resultData(ssc_data)[[i]][[1]]
+    design_list[[i]] <- design
+  }
+  return(design_list)
+}
+run1_ssc_designs <- get_design_clusters(run1_scc)
+run2_ssc_designs <- get_design_clusters(run2_scc)
+
+## Run1 Plots  
+image(run1_binned, run1_ssc_designs[[1]] ~ x * y, key=TRUE)
+plot1 <- recordPlot()
+
+image(run1_binned, run1_ssc_designs[[2]] ~ x * y, key=TRUE)
+plot2 <- recordPlot()
+
+image(run1_binned, run1_ssc_designs[[3]] ~ x * y, key=TRUE)
+plot3 <- recordPlot()
+
+image(run1_binned, run1_ssc_designs[[4]] ~ x * y, key=TRUE)
+plot4 <- recordPlot()
+
+image(run1_binned, run1_ssc_designs[[5]] ~ x * y, key=TRUE)
+plot5 <- recordPlot()
+
+image(run1_binned, run1_ssc_designs[[6]] ~ x * y, key=TRUE)
+plot6 <- recordPlot()
+  
+run1_plots <- plot_grid(plot1,plot2,plot3,plot4,plot5,plot6, ncol = 2, scale = 0.8)
+
+
+
+## Run2 Plots  
+
+image(run2_binned, run2_ssc_designs[[1]] ~ x * y, key=TRUE)
+plot1 <- recordPlot()
+
+image(run2_binned, run2_ssc_designs[[2]] ~ x * y, key=TRUE)
+plot2 <- recordPlot()
+
+image(run2_binned, run2_ssc_designs[[3]] ~ x * y, key=TRUE)
+plot3 <- recordPlot()
+
+image(run2_binned, run2_ssc_designs[[4]] ~ x * y, key=TRUE)
+plot4 <- recordPlot()
+
+image(run2_binned, run2_ssc_designs[[5]] ~ x * y, key=TRUE)
+plot5 <- recordPlot()
+
+image(run2_binned, run2_ssc_designs[[6]] ~ x * y, key=TRUE)
+plot6 <- recordPlot()
+  
+run2_plots <- plot_grid(plot1,plot2,plot3,plot4,plot5,plot6, ncol = 2, scale = 0.8)
+
+
+###Finalised_clusters
+image(run1_binned, run1_ssc_designs[[4]] ~ x * y, key=TRUE)
+plot1 <- recordPlot()
+
+image(run2_binned, run2_ssc_designs[[4]] ~ x * y, key=TRUE)
+plot2 <- recordPlot()
+
+finalised_clusterings <- plot_grid(plot1,plot2, ncol = 1, scale = 0.8)
+
+
+
+```
+
+
+## By sample
+```{r}
+
+C1_binned <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/C1/Segmentation/C1_Binned_Data.RDS")
+T1_binned <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/T1/Segmentation/T1_Binned_Data.RDS")
+C2_binned <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/C2/Segmentation/C2_Binned_Data.RDS")
+T2_binned <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/T2/Segmentation/T2_Binned_Data.RDS")
+
+
+C1_scc <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/C1/Segmentation/C1_ssc.RDS")
+T1_scc <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/T1/Segmentation/T1_ssc.RDS")
+C2_scc <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/C2/Segmentation/C2_ssc.RDS")
+T2_scc <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/T2/Segmentation/T2_ssc.RDS")
+```
+
+
+```{r}
+
+image(C1_scc, model=list(s=c(0,5,10,15,20,25)), layout=c(2,3))
+
+image(T1_scc, model=list(s=c(0,5,10,15,20,25)), layout=c(2,3))
+
+image(C2_scc, model=list(s=c(0,5,10,15,20,25)), layout=c(2,3))
+
+image(T2_scc, model=list(s=c(0,5,10,15,20,25)), layout=c(2,3))
+
+
+
+### Plots
+image(C1_scc, model=list(s=c(15)))
+plot1 <- recordPlot()
+
+image(T1_scc, model=list(s=c(15)))
+plot2 <- recordPlot()
+
+image(C2_scc, model=list(s=c(15)))
+plot3 <- recordPlot()
+
+image(T2_scc, model=list(s=c(15)))
+plot4 <- recordPlot()
+
+plots <- plot_grid(plot1,plot2,plot3,plot4, ncol = 2, scale = 0.8)
+
+```
+
+
+
+
+```{r}
+#Add Annotations back to binned Data 
+#### 4 here referese to r = 2, k =5, s = 15, and 1 will get this class infomation from the resultsData table
+
+add_segmentations <- function(data_binned, data_ssc){
+  data_bin <- data_binned
+  classes <- resultData(data_ssc)[[4]][[1]]
+  pixel_data <- pixelData(data_bin)
+  
+  individual_class_columns <- list()
+  for (class in unique(classes)){
+    print(paste0("Calculating for Class: ",class))
+    class_column <- c()
+    for (row in classes){
+      #print(paste0("print row: ",row))
+      match <- FALSE
+      if (row == class){
+         match <- TRUE
+      }
+      class_column <- c(class_column,match)
+      
+    }
+    individual_class_columns <- c(individual_class_columns, setNames(list(class_column), class))
+  }
+  
+  for (class_column in names(individual_class_columns)){
+    pixel_data[[paste0("class_",class_column)]] <- individual_class_columns[[class_column]]
+  }
+  
+  pixelData(data_bin) <- pixel_data
+  return(data_bin)
+}
+
+C1_seg <- add_segmentations(C1_binned,C1_scc)
+
+
+```
+
+
+
+```{r plot_segmentation}
+design <- makeFactor(C1= C1_seg$class_1, 
+                     C2= C1_seg$class_2, 
+                     C3= C1_seg$class_3, 
+                     C4= C1_seg$class_4, 
+                     C5= C1_seg$class_5)
+image(C1_seg, design ~ x * y, key=TRUE)
+
+```
+
+
+
+```{r add_tumour_annotation}
+
+add_tumour_annotation <- function(data_binned, data_ssc, cancer_class, sample_name){
+  
+  data_bin <- data_binned
+  classes <- resultData(data_ssc)[[4]][[1]]
+  pixel_data <- pixelData(data_bin)
+  
+  
+  cancer_class_column <- c()
+  for (row in classes){
+    cancer <- FALSE
+    if (row == cancer_class){
+         cancer <- TRUE
+    }
+    cancer_class_column <- c(cancer_class_column,cancer)
+  }
+      
+  pixel_data[["cancer_class"]] <- cancer_class_column
+  
+  treatment_list <- rep(FALSE,length(cancer_class_column))
+  if (sample_name == "T1"|| sample_name == "T2" ){
+    treatment_list <- rep(TRUE,length(cancer_class_column))
+  }
+  
+  pixel_data[["treatment_class"]] <- treatment_list
+  
+  pixelData(data_bin) <- pixel_data
+  return(data_bin)
+
+}
+
+C1 <- add_tumour_annotation(C1_binned, C1_scc, "2","C1")
+T1 <- add_tumour_annotation(T1_binned, T1_scc, "3","T1")
+C2 <- add_tumour_annotation(C2_binned, C2_scc, "2","C2")
+T2 <- add_tumour_annotation(T2_binned, T2_scc, "3","T2")
+
+```
+
+
+
+```{r all_data}
+all_data_binned <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/All_Samples/Refined/All_Samples_Binned_Data.RDS")
+all_data_ssc <- readRDS("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/All_Samples/All_Samples_ssc.RDS")
+
+#image(all_data_ssc, model=list(s=c(0,5,10,15,20,25)))
+
+image(all_data_ssc, model=list(s=c(25)))
+plot1 <- recordPlot()
+
+plot(all_data_ssc, model=list(s=25), lwd=2)
+plot2 <- recordPlot()
+all_plots <- plot_grid(plot1,plot2, ncol = 1, scale = 0.8)
+
+
+
+
+cols <- discrete.colors(7)
+setup.layout(c(2,2))
+plot(all_data_ssc, model=list(s=25), lwd=2, layout = NULL)
+image(all_data_ssc, model=list(s=c(25)), layout = NULL)
+plot(all_data_ssc, model=list(s=25), column=3, col=cols[3], lwd=2, layout=NULL)
+image(all_data_ssc, model=list(s=c(25)), column=3, col=cols[3], layout = NULL)
+
+```
+
+
+```{r}
+add_tumour_annotation <- function(data_binned, data_ssc, cancer_class){
+  
+  data_bin <- data_binned
+  classes <- resultData(data_ssc)[[6]][[1]]
+  pixel_data <- pixelData(data_bin)
+  
+  
+  cancer_class_column <- c()
+  for (row in classes){
+    cancer <- FALSE
+    if (row == cancer_class){
+         cancer <- TRUE
+    }
+    cancer_class_column <- c(cancer_class_column,cancer)
+  }
+      
+  pixel_data[["cancer_class"]] <- cancer_class_column
+  
+  treatment_list <- c()
+  
+  for (run in pixel_data@run){
+    
+    treated <- "Control"
+    if (run == "VLP94C/vlp94c_dhb"|| run == "VLP94D/vlp94d_dhb"){
+      treated <- "Treated"
+    }
+    treatment_list <- c(treatment_list, treated)
+    
+  }
+  
+  pixel_data[["treatment_class"]] <- treatment_list
+  
+  pixel_data[["region"]] <- classes
+  
+  pixelData(data_bin) <- pixel_data
+  return(data_bin)
+
+}
+
+all_data <- add_tumour_annotation(all_data_binned, all_data_ssc, "3")
+only_tumour <- subsetPixels(all_data, region==3)
+
+```
+
+
+
+```{r}
+#image(all_data, mz=450.259, plusminus=0.005, subset = cancer_class)
+
+add_feature_data <- function(data_binned){
+  data <- data_binned
+  feature_data <- featureData(data)
+  for (i in unique(data$region)){
+    print(i)
+    fdata <- data %>% subsetPixels(region == i) %>% summarizeFeatures("mean",  as = "DataFrame")
+    feature_data[[paste0("class_",i)]] <- fdata$mean
+  }
+  
+  for (i in unique(run(data))){
+    print(i)
+    fdata <- data %>% subsetPixels(run(data) == i) %>% summarizeFeatures("mean",  as = "DataFrame")
+    feature_data[[paste0("run_",i)]] <- fdata$mean
+  }
+  
+  
+  for (i in unique(data$treatment_class)){
+    fdata <- data %>% subsetPixels(treatment_class == i) %>% summarizeFeatures("mean",  as = "DataFrame")
+    feature_data[[paste0(i, "_group")]] <- fdata$mean
+  }
+  
+  featureData(data) <- feature_data
+  return(data)
+}
+
+new_data <- add_feature_data(only_tumour)
+
+mtest <- meansTest(new_data, ~ treatment_class, groups=run(new_data))
+summary_df <- summary(mtest)
+summary_df <- summary_df[order(summary_df$PValue), ]
+
+
+top_f <-topFeatures(mtest, p.adjust="fdr", AdjP < .05, n=10000)
+top10_f <- topFeatures(mtest, p.adjust="fdr", AdjP < 0.05, n=30)
+
+
+
+Treated_Fold_Change <- c()
+for (i in rownames(tn)){
+  treated_mean <- tn$Treated_group[i]
+  control_mean <- tn$Control_group[i]
+  if (treated_mean > control_mean){
+    change <- "UP"
+  } else {
+    change <- "DOWN"
+  }
+  Treated_Fold_Change <- c(Treated_Fold_Change, change)
+}
+tn$Treated_Fold_Change <- Treated_Fold_Change
+
+
+```
+
+
+
+```{r}
+plots <- list()
+for (i in seq(1,length(tn$feature))){
+  print(i)
+  plot <- plot(mtestn, ylab = "intensity", model = DataFrame(feature = c(tn$feature[i])))
+  plots[[i]] <- plot
+}
+
+plots[[1]]
+p1 <- recordPlot()
+
+plots[[2]]
+p2 <- recordPlot()
+
+plots[[3]]
+p3 <- recordPlot()
+
+plots[[4]]
+p4 <- recordPlot()
+
+plots[[5]]
+p5 <- recordPlot()
+
+plots[[6]]
+p6 <- recordPlot()
+
+plots[[7]]
+p7 <- recordPlot()
+
+plots[[8]]
+p8 <- recordPlot()
+
+plots[[9]]
+p9 <- recordPlot()
+
+plots[[10]]
+p10 <- recordPlot()
+
+
+plot_grid(p1,p2,p3,p4,p5,p6,p7,p8,p9,p10, nrow = 2, ncol = 5, scale = 0.8)
+
+
+
+
+
+
+
+lots_with_titles <- list()
+
+for (feature in top10_f$feature) {
+    # Create the plot
+    p <- plot(mtest_sub, ylab = "intensity", model = DataFrame(feature = c(feature)))
+    
+    # Create the title
+    title_text <- paste0("Feature: ", feature, " = m/z: ", top10_f[top10_f$feature == feature, "mz"])
+    
+    # Combine the plot and title as a list
+    plot_with_title <- list(plot = p, title = title_text)
+    
+    # Append to the list of plots with titles
+    plots_with_titles[[length(plots_with_titles) + 1]] <- plot_with_title
+}
+
+# Define the layout for arranging plots
+layout_matrix <- matrix(1:length(plots_with_titles), ncol = 2, byrow = TRUE)
+
+# Plot each plot with its title
+for (i in 1:length(plots_with_titles)) {
+    plot_index <- plots_with_titles[[i]]
+    p <- plot_index$plot
+    title_text <- plot_index$title
+    print(p)
+    title(main = title_text, line =1.2)
+}
+```
+
+
+
+
+
+```{r}
+
+
+# Create a list to store the plots and titles
+plots_with_titles <- list()
+
+for (feature in top10_f_all$feature) {
+  # Create the plot
+  p <- plot(mtest, ylab = "intensity", model = DataFrame(feature = c(feature)))
+  
+  # Create the title
+  title_text <- paste0("Feature: ", feature, " = m/z: ", top10_f_all[top10_f_all$feature == feature, "mz"])
+  
+  # Combine the plot and title as a list
+  plot_with_title <- list(plot = p, title = title_text)
+  
+  # Append to the list of plots with titles
+  plots_with_titles[[length(plots_with_titles) + 1]] <- plot_with_title
+}
+
+# Define the layout for arranging plots
+layout_matrix <- matrix(1:length(plots_with_titles), ncol = 2, byrow = TRUE)
+
+# Plot each plot with its title
+for (i in 1:length(plots_with_titles)) {
+  plot_index <- plots_with_titles[[i]]
+  p <- plot_index$plot
+  title_text <- plot_index$title
+  print(p)
+  title(main = title_text, line =1.2)
+}
+
+
+````
+
+
+```{r}
+
+images <- list()
+image_idx <- 1
+for (feature in top10_f$feature){
+  mz = top10_f[top10_f$feature == feature, "mz"]
+  plot <- image(only_tumour, mz = mz, plusminus=0.005, colorscale = magma)
+  #plot <- recordPlot()
+  print(plot)
+}
+
+
+```
+
+```{r}
+write.csv(summary_df, "I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/A")
+```
+
+
+```{r}
+print("C1 Tumour Top m/z peaks ...")
+print(topFeatures(C1, model=list(s=15), class == 4))
+
+print("T1 Tumour Top m/z peaks ...")
+print(topFeatures(T1, model=list(s=15), class == 3))
+
+print("C2 Tumour Top m/z peaks ...")
+print(topFeatures(C2, model=list(s=15), class == 1))
+
+print("T2 Tumour Top m/z peaks ...")
+print(topFeatures(T2, model=list(s=15), class == 3))
+
+
+
+export_tumour_peaks <- function(sample, data, class){
+  df <- as.data.frame(topFeatures(data, model=list(s=15), n = 1000)) # n is set to 1000 so that all m/z values are included
+  df <- df[df$class == class, ]
+  write.csv(df, paste0("I:/GML001-Q1851/Andrew_C/Metabolomics/Analysis/",sample,"/",sample,"_tumour_peaks.csv"))
+}
+
+export_tumour_peaks("C1",C1,4)
+export_tumour_peaks("T1",T1,3)
+export_tumour_peaks("C2",C2,1)
+export_tumour_peaks("T2",T2,3)
+
+
+```
+
+
+
+```{r}
+#modelData(T2)  #This shows that the index we need to match r=2, k=5, s=15 is 4
+
+cluster_data <- resultData(T2)[[4]] # this is the data we need from the ssc
+cluster_data <- cluster_data$class
+
+tumour_cluster <- c()
+for (clust in cluster_data){
+  value <- FALSE
+  
+  if (clust == 3){
+    value <- TRUE
+  }
+  tumour_cluster <- c(tumour_cluster,value)
+}
+
+pixel_data <- pixelData(T2_raw)
+
+pixel_data$tumour <- tumour_cluster
+
+pixelData(T2_raw) <- pixel_data
+
+
+```
+
+
+
+```{r}
+
+get_design_clusters <- function(ssc_data){
+  design_list <- list()
+  for (i in seq(1,6)){
+    print(i)
+    design <- resultData(ssc_data)[[i]][[1]]
+    design_list[[i]] <- design
+  }
+  return(design_list)
+}
+run1_ssc_designs <- get_design_clusters(run1_redo_ssc)
+
+  
+image(run1, run1_ssc_designs[[1]] ~ x * y, key=TRUE)
+plot1 <- recordPlot()
+
+image(run1, run1_ssc_designs[[2]] ~ x * y, key=TRUE)
+plot2 <- recordPlot()
+
+image(run1, run1_ssc_designs[[3]] ~ x * y, key=TRUE)
+plot3 <- recordPlot()
+
+image(run1, run1_ssc_designs[[4]] ~ x * y, key=TRUE)
+plot4 <- recordPlot()
+
+image(run1, run1_ssc_designs[[5]] ~ x * y, key=TRUE)
+plot5 <- recordPlot()
+
+image(run1, run1_ssc_designs[[6]] ~ x * y, key=TRUE)
+plot6 <- recordPlot()
+  
+all_plots <- plot_grid(plot1,plot2,plot3,plot4,plot5,plot6, ncol = 2, scale = 0.8)
+
+```
+
+
+

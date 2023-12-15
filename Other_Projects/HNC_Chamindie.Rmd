@@ -208,10 +208,6 @@ CARD_sub_output[["D"]] <- run_card(D, ref_data_sub, "D")
 
 
 
-
-
-
-
 ```{r}
 get_label <- function(data){
   
@@ -236,6 +232,31 @@ A@meta.data$Label_Transfer<-  A_max
 B@meta.data$Label_Transfer <-  B_max
 C@meta.data$Label_Transfer <- C_max
 D@meta.data$Label_Transfer <-  D_max
+
+
+### IF CARD HAS ALREADY BEEN RUN
+get_card <- function(data, name){
+  df <- read.csv(paste0("I:/GML001-Q1851/Andrew_C/HNC_Chaminde/CARD_",name,"_celltype_newref_prop.csv"))
+  df <- t(df)
+  colnames(df) <- df["X",]
+  df <- df[-1, ]
+  df <- data.frame(df)
+  for (col in colnames(df)){
+    meta <- as.numeric(df[[col]])
+    data@meta.data[[col]] <- meta
+  }
+  data@meta.data$Label_Transfer<-  get_label(df)
+  
+  return(data)
+}
+
+A <- get_card(A, "A")
+B <- get_card(B, "B")
+C <- get_card(C, "C")
+D <- get_card(D, "D")
+
+
+
 ```
 
 
@@ -256,11 +277,12 @@ color_dic = list("T.cells" = "#c202f2",
 
 
 
-plot <- SpatialDimPlot(merged, group.by = "Label_Transfer", images = c("slice1","slice1_B.2","slice1_C.3","slice1_D.4"), ncol = 2, cols = color_dic, pt.size.factor = 1.4)
-ggsave(plot = plot, filename = "I:/GML001-Q1851/Andrew_C/HNC_Chaminde/Finalised_Figures/Label_Transfer_CARD.pdf")
+plot1 <- SpatialDimPlot(merged, group.by = "Label_Transfer", images = c("slice1","slice1_B.2","slice1_C.3","slice1_D.4"), ncol = 2, cols = color_dic, pt.size.factor = 1.4)
 
-plot <- SpatialDimPlot(merged, group.by = "RCTD", images = c("slice1","slice1_B.2","slice1_C.3","slice1_D.4"), ncol = 2, cols = color_dic,pt.size.factor = 1.4)
-ggsave(plot = plot, filename = "I:/GML001-Q1851/Andrew_C/HNC_Chaminde/Finalised_Figures/Label_Transfer_RCTD.pdf")
+#ggsave(plot = plot1, filename = #"I:/GML001-Q1851/Andrew_C/HNC_Chaminde/Finalised_Figures/Label_Transfer_CARD.pdf")
+
+#plot2 <- SpatialDimPlot(merged, group.by = "RCTD", images = #c("slice1","slice1_B.2","slice1_C.3","slice1_D.4"), ncol = 2, cols = #color_dic,pt.size.factor = 1.4)
+#ggsave(plot = plot2, filename = #"I:/GML001-Q1851/Andrew_C/HNC_Chaminde/Finalised_Figures/Label_Transfer_RCTD.pdf")
 
 ```
 
@@ -269,6 +291,21 @@ ggsave(plot = plot, filename = "I:/GML001-Q1851/Andrew_C/HNC_Chaminde/Finalised_
 ```{r}
 Idents(merged) <- "tissues"
 filtered_merged <- subset(merged, ident = "N", invert = TRUE)
+
+filtered_merged@meta.data$samples <- str_extract(filtered_merged@meta.data$sample_id, "P[^_]+")
+
+filtered_merged@meta.data <- filtered_merged@meta.data %>%
+  mutate(sample_rename = ifelse(grepl("P9900", samples), "NR1",
+                            ifelse(grepl("P18588", samples), "R1",
+                            ifelse(grepl("P9237", samples), "R2",
+                            ifelse(grepl("P28310", samples), "R3",
+                            ifelse(grepl("P603922", samples), "R4",
+                            ifelse(grepl("P25115", samples), "NR2",
+                            ifelse(grepl("P18262", samples), "NR3",
+                            ifelse(grepl("P28724", samples), "NR4",
+                            ifelse(grepl("P52393", samples), "NR5",
+                            ifelse(grepl("P35384", samples), "NR6", NA)))))))))))
+
 
 PLOT <- ggplot(filtered_merged@meta.data, aes(x = recurrent, fill = Label_Transfer)) +
     geom_bar(position = "stack") +
@@ -292,7 +329,7 @@ names(rec.labs) <- c("N", "recurrent")
 
 filtered_merged@meta.data$patient_id <- sub("_.+", "", filtered_merged@meta.data$sample_id)
 
-PLOT <- ggplot(filtered_merged@meta.data, aes(x = patient_id, fill = Label_Transfer)) +
+PLOT <- ggplot(filtered_merged@meta.data, aes(x = sample_rename, fill = Label_Transfer)) +
     geom_bar(position = "fill") +
     labs(title = "Cell Type Proportions of Recurrent and Non-Reccurent Samples", x = "recurrent", y = "Count") +
     scale_fill_manual(values = color_dic) +

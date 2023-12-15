@@ -24,7 +24,7 @@ OUTPUT_DIR <- "I:/GML001-Q1851/Andrew_C/Other_Project/Xenium_Skin_Project/"
 
 
 ## read in data
-```{r import_data}
+```{r import_data, warning=FALSE}
 
 load_xenium <- function(sample){
   xenium_data <- LoadXenium(paste0(IMPORT_DIR,"output-XETG00114__",sample,"__20230906__060936/"), fov = "fov")
@@ -58,5 +58,8 @@ for (sample in sample_list){
   xen_data <- c(xen_data, sample_name = data)
 }
 
-
+saveRDS(xen_data, paste0(OUTPUT_DIR,"xenium_dataset.RDS")
 ```
+
+
+```{r}
