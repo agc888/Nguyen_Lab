@@ -12,7 +12,7 @@ if (!(dir.exists(OUT_DIR))){
     print("WARNING: MUST CREATE '/QRISdata/Q1851/Andrew_C/Metabolomics/Pipeline/' FIRST FOR DATA TO SAVE CORRECTLY")
 }
 
-folder <- "/QRISdata/Q1851/Andrew_C/Metabolomics/Pipeline/Segmentation/"
+folder <- "/QRISdata/Q1851/Andrew_C/Metabolomics/SpaMTP/"
 
 if (!(dir.exists(folder))){
     print(paste0("Creating New Folder - ", folder))
